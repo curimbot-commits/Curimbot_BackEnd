@@ -72,5 +72,3 @@ node_modules/
 
 enc.key
 storage/
-Dockerfile
-docker-compose.yml
