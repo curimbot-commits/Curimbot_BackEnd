@@ -37,7 +37,7 @@ class ActivityLogOut(BaseModel):
     """Esquema para registrar una actividad de un usuario"""
     id: int
     action: str  
-    document_id: int  
+    document_id: Optional[int] = None  
     document_name: str  
     document_type: Union[FileType, str]  
     user_id: Optional[int] = None  

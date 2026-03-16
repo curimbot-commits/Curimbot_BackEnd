@@ -5,7 +5,7 @@ app/services/email_service.py
 import resend
 import logging
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class EmailService:
                     </p>
                     
                     <p style="margin-top: 20px;">
-                        <strong>Fecha de solicitud:</strong> {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}
+                        <strong>Fecha de solicitud:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}
                     </p>
                 </div>
                 <div class="footer">
@@ -185,7 +185,7 @@ class EmailService:
                     </div>
                     
                     <p>Tu contraseña se ha actualizado correctamente.</p>
-                    <p><strong>Fecha del cambio:</strong> {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}</p>
+                    <p><strong>Fecha del cambio:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
                     
                     <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0; border-radius: 4px;">
                         <strong>⚠️ ¿No fuiste tú?</strong>
@@ -246,7 +246,7 @@ class EmailService:
                     <p>Hola {user_name},</p>
                     <p>Tu perfil ha sido actualizado exitosamente.</p>
                     <p><strong>Campos modificados:</strong> {fields_text}</p>
-                    <p><strong>Fecha:</strong> {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}</p>
+                    <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
                     <p>Si no realizaste este cambio, por favor contacta con soporte inmediatamente.</p>
                 </div>
                 <div class="footer">
@@ -336,7 +336,7 @@ class EmailService:
         
         return self.send_email(
             to_email=to_email,
-            subject=f"📊 Tu resumen semanal - {datetime.utcnow().strftime('%d/%m/%Y')}",
+            subject=f"📊 Tu resumen semanal - {datetime.now(timezone.utc).strftime('%d/%m/%Y')}",
             html_content=html_content
         )
     
@@ -374,7 +374,7 @@ class EmailService:
                 <div class="content">
                     <p>Hola {user_name},</p>
                     <p>Tus preferencias de <strong>{preference_type}</strong> han sido actualizadas exitosamente.</p>
-                    <p><strong>Fecha:</strong> {datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC')}</p>
+                    <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
                 </div>
             </div>
         </body>

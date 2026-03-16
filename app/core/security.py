@@ -3,9 +3,10 @@
 import re
 from pydantic import BaseModel, Field, EmailStr, field_validator, ConfigDict
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from app.enums.enums import UserRole
+from passlib.context import CryptContext
 
 from app.schemas.common_schemas import LoginAttemptDetails
 from app.schemas.user_schemas import UserInfoResponse
@@ -210,7 +211,7 @@ class AuthErrorResponse(BaseModel):
     error_code: str = Field(..., description="Error code identifier")
     message: str = Field(..., description="Human-readable error message")
     details: Optional[dict] = Field(None, description="Additional error details")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -593,3 +594,12 @@ class LoginWith2FARequest(BaseModel):
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica que la contraseña en texto plano coincida con el hash"""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    """Genera un hash de contraseña"""
+    return pwd_context.hash(password)
+
+
+
+

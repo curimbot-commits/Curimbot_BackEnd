@@ -18,7 +18,7 @@ Características:
 import datetime
 import io
 import logging
-from typing import List, Optional
+from typing import List, Optional, Annotated
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -76,9 +76,9 @@ def get_db():
 
 @router.get("/", response_model=PaginatedDocumentsResponse)
 def get_documents(
-    skip: int = Query(0, ge=0, description="Número de elementos a omitir"),
-    limit: int = Query(20, ge=1, le=100, description="Número máximo de elementos a devolver"),
-    file_type: Optional[FileType] = Query(None, description="Filtrar por tipo de archivo: pdf, docx, txt"),
+    skip: Annotated[int, Query(ge=0, description="Número de elementos a omitir")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Número máximo de elementos a devolver")] = 20,
+    file_type: Annotated[Optional[FileType], Query(description="Filtrar por tipo de archivo: pdf, docx, txt")] = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):

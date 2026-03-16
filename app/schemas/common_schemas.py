@@ -2,7 +2,7 @@
 from typing import List, Optional, Dict, Any
 
 from typing import List, Optional, Dict, Any 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, conint
 
@@ -14,7 +14,7 @@ class SuccessResponse(BaseModel):
     success: bool = True
     message: str
     data: Optional[Dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ErrorResponse(BaseModel):
     """Respuesta de error genérica"""
@@ -22,7 +22,7 @@ class ErrorResponse(BaseModel):
     error_code: str
     message: str
     details: Optional[Dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ValidationErrorDetail(BaseModel):
     """Detalle de error de validación"""
@@ -35,7 +35,7 @@ class ValidationErrorResponse(BaseModel):
     error_code: str = "validation_error"
     message: str = "Error de validación"
     details: List[ValidationErrorDetail]
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class BulkOperationResponse(BaseModel):
     """Respuesta de operación en lote"""

@@ -31,7 +31,7 @@ Notas:
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.services.handlers.base import DocumentHandler, DocumentContext
@@ -204,7 +204,7 @@ class IndexCurimHandler(DocumentHandler):
                 document_id=document_id,
                 is_indexed=True,
                 chunks_count=chunks_count,
-                last_indexed_at=datetime.utcnow(),
+                last_indexed_at=datetime.now(timezone.utc),
                 error_message=None
             )
             

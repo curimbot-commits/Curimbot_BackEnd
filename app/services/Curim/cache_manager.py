@@ -27,7 +27,7 @@ import os
 import json
 import hashlib
 from typing import Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class CacheManager:
@@ -241,7 +241,7 @@ class CacheManager:
             - Se puede llamar manualmente si necesario
             - Guarda cambios si hay expirados
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired_keys = []
         
         for key, value in self.cache.items():
@@ -307,7 +307,7 @@ class CacheManager:
             # Verificar si expiró
             try:
                 cached_at = datetime.fromisoformat(entry.get("cached_at"))
-                if datetime.utcnow() - cached_at > timedelta(days=self.cache_ttl_days):
+                if datetime.now(timezone.utc) - cached_at > timedelta(days=self.cache_ttl_days):
                     del self.cache[key]
                     self._save_cache()
                     return None
@@ -377,7 +377,7 @@ class CacheManager:
             "confidence": confidence,
             "sources": sources,
             "sources_info": sources_info,
-            "cached_at": datetime.utcnow().isoformat(),
+            "cached_at": datetime.now(timezone.utc).isoformat(),
             "hits": 0
         }
         

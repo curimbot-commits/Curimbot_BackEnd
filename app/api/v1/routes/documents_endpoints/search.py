@@ -15,11 +15,10 @@ Características:
 """
 
 import logging
-from typing import List, Optional
-from fastapi import Depends, HTTPException, APIRouter
-from fastapi.params import Query
+from typing import List, Optional, Annotated
 
-from requests import session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 from app.models.models import User
 from app.schemas.document_schemas import DocumentSearchOut, PaginatedDocumentsResponse
 from app.services.auth_service import get_current_user
@@ -59,11 +58,11 @@ def get_db():
 
 @router.get("/search", response_model=PaginatedDocumentsResponse)
 def search_documents(
-    text: Optional[str] = Query(None, min_length=2, description="Texto a buscar en contenido y nombre"),
-    file_type: Optional[FileType] = Query(None, description="Filtrar por tipo de archivo"),
-    skip: int = Query(0, ge=0, description="Elementos a omitir"),
-    limit: int = Query(20, ge=1, le=100, description="Máximo elementos por página"),
-    db: session = Depends(get_db),
+    text: Annotated[Optional[str], Query(min_length=2, description="Texto a buscar en contenido y nombre")] = None,
+    file_type: Annotated[Optional[FileType], Query(description="Filtrar por tipo de archivo")] = None,
+    skip: Annotated[int, Query(ge=0, description="Elementos a omitir")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Máximo elementos por página")] = 20,
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """

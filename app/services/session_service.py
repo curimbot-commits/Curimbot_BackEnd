@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -134,7 +134,7 @@ class SessionService:
             refresh_payload = jwt.get_unverified_claims(refresh_token)
             expires_timestamp = refresh_payload.get("exp")
             expires_at = datetime.fromtimestamp(expires_timestamp) if expires_timestamp else (
-                datetime.utcnow() + timedelta(days=7)
+                datetime.now(timezone.utc) + timedelta(days=7)
             )
             
             # Extraer información del dispositivo
@@ -157,8 +157,8 @@ class SessionService:
                 ip_address=ip_address,
                 user_agent=user_agent,
                 location=location,
-                created_at=datetime.utcnow(),
-                last_active=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                last_active=datetime.now(timezone.utc),
                 expires_at=expires_at,
                 is_current=is_current,
                 is_active=True
@@ -197,7 +197,7 @@ class SessionService:
             if active_only:
                 query = query.filter(
                     ActiveSession.is_active == True,
-                    ActiveSession.expires_at > datetime.utcnow()
+                    ActiveSession.expires_at > datetime.now(timezone.utc)
                 )
             
             sessions = query.order_by(ActiveSession.last_active.desc()).all()
@@ -253,11 +253,11 @@ class SessionService:
             # Agregar tokens a blacklist
             blacklist_access = BlacklistedToken(
                 token=session.access_token_jti,
-                blacklisted_at=datetime.utcnow()
+                blacklisted_at=datetime.now(timezone.utc)
             )
             blacklist_refresh = BlacklistedToken(
                 token=session.refresh_token_jti,
-                blacklisted_at=datetime.utcnow()
+                blacklisted_at=datetime.now(timezone.utc)
             )
             
             db.add(blacklist_access)
@@ -312,8 +312,8 @@ class SessionService:
             
             # Agregar tokens a blacklist
             for session in sessions:
-                db.add(BlacklistedToken(token=session.access_token_jti, blacklisted_at=datetime.utcnow()))
-                db.add(BlacklistedToken(token=session.refresh_token_jti, blacklisted_at=datetime.utcnow()))
+                db.add(BlacklistedToken(token=session.access_token_jti, blacklisted_at=datetime.now(timezone.utc)))
+                db.add(BlacklistedToken(token=session.refresh_token_jti, blacklisted_at=datetime.now(timezone.utc)))
                 db.delete(session)
             
             db.commit()
@@ -343,7 +343,7 @@ class SessionService:
         try:
             db.query(ActiveSession).filter(
                 ActiveSession.access_token_jti == access_token_jti
-            ).update({"last_active": datetime.utcnow()})
+            ).update({"last_active": datetime.now(timezone.utc)})
             
             db.commit()
             
@@ -364,7 +364,7 @@ class SessionService:
         """
         try:
             expired = db.query(ActiveSession).filter(
-                ActiveSession.expires_at < datetime.utcnow()
+                ActiveSession.expires_at < datetime.now(timezone.utc)
             )
             
             count = expired.count()

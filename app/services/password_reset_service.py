@@ -4,7 +4,7 @@ app/services/password_reset_service.py
 """
 import secrets
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -80,7 +80,7 @@ class PasswordResetService:
             
             # Generar nuevo token
             reset_token = self.generate_reset_token()
-            expiry_time = datetime.utcnow() + timedelta(hours=self.token_expiry_hours)
+            expiry_time = datetime.now(timezone.utc) + timedelta(hours=self.token_expiry_hours)
             
             # Guardar token en BD
             token_record = PasswordResetToken(
@@ -135,7 +135,7 @@ class PasswordResetService:
                 logger.warning(f"Invalid or already used reset token")
                 return None
             
-            if token_record.expires_at < datetime.utcnow():
+            if token_record.expires_at < datetime.now(timezone.utc):
                 logger.warning(f"Expired reset token for user {token_record.user_id}")
                 return None
             
@@ -182,7 +182,7 @@ class PasswordResetService:
 
             # 4. Marcar token como usado
             token_record.is_used = True
-            token_record.used_at = datetime.utcnow()
+            token_record.used_at = datetime.now(timezone.utc)
 
             # 5. Guardar cambios en la DB
             db.commit()
@@ -221,7 +221,7 @@ class PasswordResetService:
         """
         try:
             deleted_count = db.query(PasswordResetToken).filter(
-                PasswordResetToken.expires_at < datetime.utcnow()
+                PasswordResetToken.expires_at < datetime.now(timezone.utc)
             ).delete()
             
             db.commit()

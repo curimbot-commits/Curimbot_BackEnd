@@ -22,7 +22,7 @@ import time
 import json
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.models import (
     User, Document, CurimConversation, CurimMessage, 
@@ -343,7 +343,7 @@ class CurimService:
             conversation_id=conversation.id,
             role="user",
             content=question,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         db.add(user_message)
         
@@ -356,7 +356,7 @@ class CurimService:
             sources=json.dumps(sources),
             from_cache=from_cache,
             processing_time_ms=int(processing_time_ms),
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         db.add(assistant_message)
         
@@ -508,13 +508,13 @@ class CurimService:
                         document_id=doc.id,
                         is_indexed=True,
                         chunks_count=chunks_count,
-                        last_indexed_at=datetime.utcnow()
+                        last_indexed_at=datetime.now(timezone.utc)
                     )
                     db.add(index_record)
                 else:
                     index_record.is_indexed = True
                     index_record.chunks_count = chunks_count
-                    index_record.last_indexed_at = datetime.utcnow()
+                    index_record.last_indexed_at = datetime.now(timezone.utc)
                     index_record.error_message = None
                 
                 processed_count += 1

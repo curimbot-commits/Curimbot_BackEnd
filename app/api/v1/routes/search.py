@@ -2,9 +2,7 @@ import datetime
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
-import io
-import json
+from typing import List, Optional, Annotated
 
 from app.schemas.document_schemas import SearchResult
 from app.schemas.log_schemas import LogCreate
@@ -29,15 +27,15 @@ def get_db():
 def search_documents(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
-    query: Optional[str] = Query(None, description="Texto a buscar."),
-    category: Optional[str] = Query(None),
-    file_type: Optional[str] = Query(None, description="Filtrar por tipo de archivo: pdf, docx, txt"),
-    date_from: Optional[datetime] = Query(None, description="Fecha desde (ISO)"), # type: ignore
-    date_to: Optional[datetime] = Query(None, description="Fecha hasta (ISO)"), # type: ignore
-    sort_by: Optional[str] = Query("relevance", enum=["relevance", "date", "size"]),
-    semantic: Optional[bool] = Query(True, description="Usar búsqueda semántica"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, le=100)
+    query: Annotated[Optional[str], Query(description="Texto a buscar.")] = None,
+    category: Annotated[Optional[str], Query()] = None,
+    file_type: Annotated[Optional[str], Query(description="Filtrar por tipo de archivo: pdf, docx, txt")] = None,
+    date_from: Annotated[Optional[datetime.datetime], Query(description="Fecha desde (ISO)")] = None, 
+    date_to: Annotated[Optional[datetime.datetime], Query(description="Fecha hasta (ISO)")] = None, 
+    sort_by: Annotated[Optional[str], Query(enum=["relevance", "date", "size"])] = "relevance",
+    semantic: Annotated[Optional[bool], Query(description="Usar búsqueda semántica")] = True,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(le=100)] = 20
 ):
     """
     Búsqueda avanzada en documentos con NLP, filtros y ordenamiento.

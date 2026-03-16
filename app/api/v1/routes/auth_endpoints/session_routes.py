@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -166,7 +166,7 @@ def get_session_stats(
             active_only=False
         )
         
-        active_sessions = [s for s in all_sessions if s.is_active and s.expires_at > datetime.utcnow()]
+        active_sessions = [s for s in all_sessions if s.is_active and s.expires_at > datetime.now(timezone.utc)]
         current_session = next((s for s in active_sessions if s.is_current), None)
         
         return SessionStatsResponse(

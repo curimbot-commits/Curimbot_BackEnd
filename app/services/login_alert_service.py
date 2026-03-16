@@ -1,6 +1,6 @@
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from fastapi import Request
@@ -110,7 +110,7 @@ class LoginAlertService:
             Tupla (es_sospechoso, es_nuevo_dispositivo, es_nueva_ubicacion)
         """
         # Obtener los últimos logins del usuario (últimos 30 días)
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         
         recent_logins = db.query(LoginAlert).filter(
             LoginAlert.user_id == user.id,
@@ -138,7 +138,7 @@ class LoginAlertService:
             # Verificar si hubo un login reciente desde otra IP
             recent_login = db.query(LoginAlert).filter(
                 LoginAlert.user_id == user.id,
-                LoginAlert.created_at >= datetime.utcnow() - timedelta(hours=1)
+                LoginAlert.created_at >= datetime.now(timezone.utc) - timedelta(hours=1)
             ).order_by(LoginAlert.created_at.desc()).first()
             
             if recent_login and recent_login.ip_address != ip_address:
@@ -296,7 +296,7 @@ class LoginAlertService:
             if success:
                 # Marcar como enviado
                 login_alert.notification_sent = True
-                login_alert.notification_sent_at = datetime.utcnow()
+                login_alert.notification_sent_at = datetime.now(timezone.utc)
                 db.commit()
                 
             
@@ -323,7 +323,7 @@ class LoginAlertService:
         Returns:
             Lista de LoginAlert
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         return db.query(LoginAlert).filter(
             LoginAlert.user_id == user.id,

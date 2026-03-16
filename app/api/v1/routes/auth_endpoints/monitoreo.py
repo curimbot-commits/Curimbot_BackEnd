@@ -9,7 +9,7 @@ Los endpoints de estadísticas requieren privilegios de administrador.
 from app.services.auth_service import AuthService, require_admin
 from app.services.security_service import verify_password
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from .....schemas.auth_schemas import (
     ActiveSessionsResponse, BackupCodesResponse, RefreshTokenRequest, 
@@ -105,7 +105,7 @@ def health_check(db: Session = Depends(get_db)):
         return {
             "status": "healthy",
             "service": "auth-service",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "database": "connected"
         }
         
@@ -222,13 +222,13 @@ def get_auth_stats_summary(
             admin_users = db.query(User).filter(User.role_id == admin_role.id).count()
         
         # Actividad reciente (últimas 24 horas)
-        cutoff_time = datetime.utcnow() - timedelta(hours=24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
         recent_signups = db.query(User).filter(User.created_at > cutoff_time).count()
         recent_logins = db.query(User).filter(User.last_login > cutoff_time).count()
         
         return {
             "service": "auth-service",
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "user_stats": {
                 "total_users": total_users,
                 "active_users": active_users,

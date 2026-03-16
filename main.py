@@ -32,8 +32,8 @@ from app.api.v1.routes.voice_endpoints import router as voice_router
 from app.services.Curim.voice_rag_service import get_rag_engine              # ← CAMBIADO
 from app.core.config import settings
 from app.core.init_roles import init_roles
-from app.db.database import Base, SessionLocal, engine, init_db
-
+from app.db.database import Base, SessionLocal, engine
+from app.api.v1.routes.oauth_routes import router as oauth_router
 
 load_dotenv()
 
@@ -241,6 +241,7 @@ app.include_router(auth_router)
 app.include_router(docs_router)
 app.include_router(assist_router)
 app.include_router(voice_router)
+app.include_router(oauth_router)
 
 # ─────────────────────────────────────────────
 # Endpoints de sistema

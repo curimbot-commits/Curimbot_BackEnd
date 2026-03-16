@@ -1,5 +1,5 @@
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from typing import Optional, Dict
@@ -92,7 +92,7 @@ class SemanticCache:
             'sources': sources,
             'sources_info': sources_info,
             'embedding': embedding,
-            'cached_at': datetime.utcnow().isoformat()
+            'cached_at': datetime.now(timezone.utc).isoformat()
         }
         
         self._save_cache()

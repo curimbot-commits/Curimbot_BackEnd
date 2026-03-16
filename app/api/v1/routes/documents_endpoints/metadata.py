@@ -15,12 +15,12 @@ Características:
 """
 
 import logging
-from typing import List
+from typing import List, Annotated
 from fastapi import Depends, HTTPException, Request, APIRouter
 from fastapi.params import Query
 from fastapi.responses import StreamingResponse
 
-from requests import session
+from sqlalchemy.orm import Session
 from app.schemas.document_schemas import DocumentOut, DocumentWithMetadata
 from app.services.auth_service import get_current_user
 from app.db.crud import crud
@@ -61,7 +61,7 @@ def get_db():
 @router.get("/{doc_id}/metadata", response_model=DocumentOut)
 def get_document_metadata(
     doc_id: int,
-    db: session = Depends(get_db),
+    db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
     """
@@ -238,8 +238,8 @@ def get_document_metadata(
 
 @router.get("/metadata/all", response_model=List[DocumentWithMetadata])
 def get_documents_metadata(
-    include_all_users: bool = Query(False, description="Incluir documentos de todos los usuarios (solo admin)"),
-    db: session = Depends(get_db),
+    include_all_users: Annotated[bool, Query(description="Incluir documentos de todos los usuarios (solo admin)")] = False,
+    db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
     """

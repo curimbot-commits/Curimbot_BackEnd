@@ -21,7 +21,7 @@ Acceso:
 
 import datetime
 import logging
-from typing import List, Optional
+from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.params import Query
 from sqlalchemy.orm import Session
@@ -43,7 +43,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.get("/stats/dashboard", response_model=DashboardStats)
 def get_dashboard_stats(
-    include_all_users: bool = Query(False, description="Incluir stats de todos los usuarios (solo admin)"),
+    include_all_users: Annotated[bool, Query(description="Incluir stats de todos los usuarios (solo admin)")] = False,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
@@ -146,8 +146,8 @@ def get_dashboard_stats(
 
 @router.get("/stats/charts", response_model=List[ChartDataPoint])
 def get_chart_data(
-    period: str = Query("month", regex="^(week|month|year)$", description="Período para el gráfico"),
-    include_all_users: bool = Query(False, description="Incluir datos de todos los usuarios (solo admin)"),
+    period: Annotated[str, Query(regex="^(week|month|year)$", description="Período para el gráfico")] = "month",
+    include_all_users: Annotated[bool, Query(description="Incluir datos de todos los usuarios (solo admin)")] = False,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
@@ -242,8 +242,8 @@ def get_chart_data(
 
 @router.get("/activities/recent", response_model=List[ActivityLogOut])
 def get_recent_activities(
-    limit: int = Query(20, ge=1, le=100, description="Número máximo de actividades"),
-    include_all_users: bool = Query(False, description="Incluir actividades de todos los usuarios (solo admin)"),
+    limit: Annotated[int, Query(ge=1, le=100, description="Número máximo de actividades")] = 20,
+    include_all_users: Annotated[bool, Query(description="Incluir actividades de todos los usuarios (solo admin)")] = False,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
@@ -346,7 +346,7 @@ def get_recent_activities(
 
 @router.get("/stats/storage", response_model=dict)
 def get_user_storage_stats(
-    target_user_id: Optional[int] = Query(None, description="ID del usuario objetivo (solo admin)"),
+    target_user_id: Annotated[Optional[int], Query(description="ID del usuario objetivo (solo admin)")] = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):

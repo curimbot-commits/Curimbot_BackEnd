@@ -1,6 +1,6 @@
 # app/services/security_service.py
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -54,6 +54,8 @@ def hash_password(password: str) -> str:
     """
     return pwd_context.hash(password)
 
+import uuid
+
 # ========================================
 #  FUNCIONES DE JWT
 # ========================================
@@ -69,8 +71,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         str: Token JWT codificado
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "type": "access"})
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "type": "access", "jti": uuid.uuid4().hex})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -85,8 +87,8 @@ def create_refresh_token(data: dict) -> str:
         str: Token JWT codificado
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "type": "refresh", "jti": uuid.uuid4().hex})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 

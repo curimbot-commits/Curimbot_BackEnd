@@ -576,19 +576,18 @@ class DocumentService:
 
     @staticmethod
     def get_recent_activities(limit: int, db: Session, user_id: int = None) -> List[ActivityLogOut]:
-        """
-        Get recent activities with optional user filtering
-        """
         try:
             if limit <= 0 or limit > 100:
                 raise HTTPException(status_code=400, detail="Limit debe estar entre 1 y 100")
 
-            query = db.query(models.ActivityLog)
+            query = db.query(models.ActivityLog).options(
+                joinedload(models.ActivityLog.document),
+                joinedload(models.ActivityLog.user)
+            )
 
             if user_id:
                 query = query.filter(models.ActivityLog.user_id == user_id)
 
-            # Ordenar por timestamp descendente
             activities = (
                 query.order_by(models.ActivityLog.timestamp.desc())
                 .limit(limit)
@@ -599,22 +598,33 @@ class DocumentService:
 
             for act in activities:
                 if not act.timestamp:
-                    logging.warning(f"Actividad con ID {act.id} no tiene timestamp. Se omitirá.")
-                    continue  # Saltar actividad inválida
+                    logging.warning(f"Actividad ID {act.id} sin timestamp. Omitida.")
+                    continue
 
-                # Validaciones defensivas para evitar errores por None
                 document_name = (
-                    act.document_name or
-                    (act.document.filename if act.document and act.document.filename else "Archivo eliminado")
+                    act.document_name
+                    or (act.document.filename if act.document else None)
+                    or "Archivo eliminado"
                 )
 
+            
                 document_type = (
-                    act.document_type or
-                    (act.document.file_type if act.document and act.document.file_type else FileType.txt)
+                    act.document_type
+                    or (act.document.file_type if act.document else None)
+                    or FileType.txt  # fallback seguro
                 )
 
                 user_name = (
-                    act.user.name if act.user and act.user.name else "Usuario eliminado"
+                    act.user.name
+                    if act.user and act.user.name
+                    else "Usuario eliminado"
+                )
+
+            
+                user_email = (
+                    act.user.email
+                    if act.user and act.user.email
+                    else None
                 )
 
                 result.append(ActivityLogOut(
@@ -626,7 +636,7 @@ class DocumentService:
                     user_id=act.user_id,
                     user_name=user_name,
                     timestamp=act.timestamp,
-                    ip_address=act.ip_address
+                    ip_address=act.ip_address,
                 ))
 
             return result
@@ -727,7 +737,7 @@ class DocumentService:
         Get documents with complete metadata, optionally filtered by user
         """
         try:
-            query = db.query(models.Document)
+            query = db.query(models.Document).options(joinedload(models.Document.owner))
             if user_id:
                 query = query.filter(models.Document.uploaded_by == user_id)
                 

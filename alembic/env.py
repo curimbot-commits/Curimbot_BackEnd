@@ -20,9 +20,22 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 import sys
 import os
+from dotenv import load_dotenv
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Cargar variables de entorno desde .env
+load_dotenv()
+
 from app.models.models import Base  
+
+# Sobrescribir la URL de la base de datos si existe en el entorno
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    # Asegurarse de que la URL sea compatible con Alembic (mysql+pymysql)
+    if database_url.startswith("mysql://"):
+        database_url = database_url.replace("mysql://", "mysql+pymysql://", 1)
+    context.config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata
 

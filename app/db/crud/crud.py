@@ -23,7 +23,7 @@ import logging
 from sqlalchemy import Tuple
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from app.enums.enums import FileType
 from app.models import models
 from app.schemas.document_schemas import DocumentCreate, DocumentUpdate
@@ -513,7 +513,7 @@ def create_activity(
         )
     
     Notes:
-        - Timestamp se genera automáticamente (utcnow)
+        - Timestamp se genera automáticamente (timezone.utc)
         - user_id puede ser None para acciones no autenticadas
         - Útil para análisis de patrones de uso
     """
@@ -522,7 +522,7 @@ def create_activity(
         document_id=document_id,
         action=action,
         ip_address=ip_address,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(db_activity)
     return db_activity
@@ -550,7 +550,7 @@ def increment_view_count(db: Session, doc: models.Document) -> None:
         - last_accessed ayuda a saber documentos usados recientemente
     """
     doc.view_count = (doc.view_count or 0) + 1
-    doc.last_accessed = datetime.utcnow()
+    doc.last_accessed = datetime.now(timezone.utc)
     db.add(doc)
 
 
@@ -576,7 +576,7 @@ def increment_download_count(db: Session, doc: models.Document) -> None:
         - Diferencia entre view y download
     """
     doc.download_count = (doc.download_count or 0) + 1
-    doc.last_accessed = datetime.utcnow()
+    doc.last_accessed = datetime.now(timezone.utc)
     db.add(doc)
 
 
@@ -681,7 +681,7 @@ def create_activity_log(
         
         # Actualizar último acceso para ciertas acciones
         if action in ["view", "download", "delete", "upload", "share"]:
-            doc.last_accessed = datetime.utcnow()
+            doc.last_accessed = datetime.now(timezone.utc)
         
         db.add(doc)
     
@@ -691,7 +691,7 @@ def create_activity_log(
         document_id=document_id,
         action=action,
         ip_address=ip_address,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         document_name=document_name,
         document_type=document_type
     )
