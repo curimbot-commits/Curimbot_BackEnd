@@ -162,7 +162,7 @@ class OAuthService:
             db=db
         )
 
-        # 4. Generar JWT (mismo formato que login normal)
+        # 4. Generar tokens (mismo formato que login normal)
         return OAuthService._generate_jwt(user)
 
     @staticmethod
@@ -292,7 +292,7 @@ class OAuthService:
             db=db
         )
 
-        # 4. Generar JWT
+        # 4. Generar tokens
         return OAuthService._generate_jwt(user)
 
     @staticmethod
@@ -520,7 +520,7 @@ class OAuthService:
             raise OAuthError(f"Error al crear usuario: {str(e)}")
 
     @staticmethod
-    def _generate_jwt(user: User) -> str:
+    def _generate_jwt(user: User) -> Tuple[str, str]:
         """
         Genera JWT usando security_service (mismo que login normal).
 
@@ -531,7 +531,7 @@ class OAuthService:
             user: Usuario autenticado
 
         Returns:
-            str: access_token JWT
+            Tuple[str, str]: (access_token, refresh_token)
         """
         token_data = {
             "sub": str(user.id),
@@ -540,9 +540,10 @@ class OAuthService:
         }
 
         access_token = security_service.create_access_token(token_data)
+        refresh_token = security_service.create_refresh_token(token_data)
 
-        logger.info(f"JWT generado para usuario OAuth: {user.email}")
-        return access_token
+        logger.info(f"Tokens generados para usuario OAuth: {user.email}")
+        return access_token, refresh_token
 
 
 # =========================================================

@@ -32,6 +32,7 @@ from app.services.auth_service import (
 
 from app.services.login_alert_service import LoginAlertService
 from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
 from app.core.config import RESEND_API_KEY, FROM_EMAIL
 
 
@@ -126,6 +127,23 @@ def signup(
     try:
         ip_address, _ = get_client_info(request)
         access_token, refresh_token = AuthService.signup_user(user_data, db, ip_address)
+        
+        # Enviar notificación de bienvenida / seguridad
+        try:
+            user = db.query(User).filter(User.email == user_data.email.lower()).first()
+            if user:
+                email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
+                notification_service = NotificationService(email_service)
+                notification_service.send_notification(
+                    user_id=user.id,
+                    notification_type=NotificationType.SECURITY_ALERT,
+                    subject="🚀 ¡Bienvenido a Curim AI!",
+                    content=f"Hola {user.name}, tu cuenta ha sido creada exitosamente.",
+                    db=db
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send welcome notification: {e}")
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -249,11 +267,25 @@ def login_with_2fa(
         access_token = security_service.create_access_token(token_data)
         refresh_token = security_service.create_refresh_token(token_data)
 
+        # Crear sesión activa
+        ip_address, user_agent = get_client_info(request) if request else ("unknown", "unknown")
+        from app.services.session_service import SessionService
+        SessionService.create_session(
+            user_id=user.id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db,
+            is_current=True
+        )
+
         AuthService.update_last_login(user, db)
 
         try:
             email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
-            alert_service = LoginAlertService(email_service)
+            notification_service = NotificationService(email_service)
+            alert_service = LoginAlertService(notification_service)
             alert_service.record_login_and_check(user, request, db)
         except Exception as alert_error:
             logger.warning(f"Failed to record login alert: {alert_error}")

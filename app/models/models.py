@@ -17,7 +17,7 @@ from .auth_models import (
     ActiveSession, PasswordResetToken, BlacklistedToken
 )
 from .document_models import Document, ActivityLog
-from .preference_models import UserPreferences, Log
+from .preference_models import UserPreferences, Log, NotificationHistory
 from .Curim_models import CurimConversation, CurimMessage, CurimDocumentIndex
 
 __all__ = [
@@ -25,6 +25,6 @@ __all__ = [
     "Role", "User", "LoginAttempt", "LoginAlert", 
     "ActiveSession", "PasswordResetToken", "BlacklistedToken",
     "Document", "ActivityLog",
-    "UserPreferences", "Log",
+    "UserPreferences", "Log", "NotificationHistory",
     "CurimConversation", "CurimMessage", "CurimDocumentIndex"
 ]

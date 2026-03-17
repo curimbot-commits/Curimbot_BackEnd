@@ -128,11 +128,15 @@ class UserPreferencesService:
             email_notifications=prefs.email_notifications,
             push_notifications=prefs.push_notifications,
             weekly_summary=prefs.weekly_summary,
+            weekly_summary_format=prefs.weekly_summary_format,
+            login_alerts=prefs.login_alerts,
+            security_alerts=prefs.security_alerts,
             language=prefs.language,
             theme=prefs.theme,
             profile_photo_url=prefs.profile_photo_url,
             updated_at=prefs.updated_at
         )
+
     
     def update_notification_preferences(
         self,
@@ -166,6 +170,19 @@ class UserPreferencesService:
         if preferences.weekly_summary is not None:
             prefs.weekly_summary = preferences.weekly_summary
             updated_fields.append("Resumen semanal")
+
+        if preferences.weekly_summary_format is not None:
+            prefs.weekly_summary_format = preferences.weekly_summary_format.value
+            updated_fields.append("Formato de resumen semanal")
+
+        if preferences.login_alerts is not None:
+            prefs.login_alerts = preferences.login_alerts
+            updated_fields.append("Alertas de login")
+
+        if preferences.security_alerts is not None:
+            prefs.security_alerts = preferences.security_alerts
+            updated_fields.append("Alertas de seguridad")
+
         
         db.commit()
         db.refresh(prefs)

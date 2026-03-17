@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from fastapi import Request
 
 from app.models.models import User, LoginAlert, UserPreferences
-from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
+from app.enums.enums import NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,8 @@ class LoginAlertService:
     - Actividad sospechosa
     """
     
-    def __init__(self, email_service: EmailService):
-        self.email_service = email_service
+    def __init__(self, notification_service: NotificationService):
+        self.notification_service = notification_service
 
     @staticmethod
     def parse_user_agent(user_agent: str) -> str:
@@ -202,13 +203,13 @@ class LoginAlertService:
             db.refresh(login_alert)
             
             # Enviar notificación si es necesario
-            should_notify = (
-                preferences.email_notifications and
-                (is_suspicious or is_new_device or is_new_location)
-            )
-            
-            if should_notify:
-                self.send_login_alert_email(user, login_alert, db)
+            if is_suspicious or is_new_device or is_new_location:
+                self.notification_service.send_notification(
+                    db=db,
+                    user_id=user.id,
+                    event_type=NotificationType.LOGIN_ALERT,
+                    data={"login_alert": login_alert}
+                )
             
             return login_alert
             
@@ -216,95 +217,6 @@ class LoginAlertService:
             logger.exception(f"Error recording login alert for user {user.id}: {e}")
             db.rollback()
             return None
-
-    def send_login_alert_email(
-        self,
-        user: User,
-        login_alert: LoginAlert,
-        db: Session
-    ) -> bool:
-        """
-        Envía email de alerta de inicio de sesión
-        
-        Args:
-            user: Usuario
-            login_alert: Información del login
-            db: Sesión de base de datos
-            
-        Returns:
-            True si se envió correctamente
-        """
-        try:
-            # Determinar el tipo de alerta
-            alert_type = "sospechoso" if login_alert.is_suspicious else "nuevo"
-            
-            # Construir el asunto
-            subject = f"⚠️ Inicio de sesión {alert_type} detectado"
-            
-            # Construir el contenido HTML
-            html_content = f"""
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2 style="color: {'#dc2626' if login_alert.is_suspicious else '#02ab74'};">
-                        {'🚨 Actividad sospechosa detectada' if login_alert.is_suspicious else '🔔 Nuevo inicio de sesión'}
-                    </h2>
-                    
-                    <p>Hola {user.name},</p>
-                    
-                    <p>
-                        {'Se ha detectado un inicio de sesión sospechoso en tu cuenta.' if login_alert.is_suspicious 
-                         else 'Se ha detectado un nuevo inicio de sesión en tu cuenta.'}
-                    </p>
-                    
-                    <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <h3 style="margin-top: 0;">Detalles del inicio de sesión:</h3>
-                        <ul style="list-style: none; padding: 0;">
-                            <li><strong>📱 Dispositivo:</strong> {login_alert.device}</li>
-                            <li><strong>📍 Ubicación:</strong> {login_alert.location or 'No disponible'}</li>
-                            <li><strong>🌐 IP:</strong> {login_alert.ip_address}</li>
-                            <li><strong>🕐 Fecha y hora:</strong> {login_alert.created_at.strftime('%d/%m/%Y %H:%M:%S')}</li>
-                        </ul>
-                        
-                        {f'<p style="color: #dc2626; font-weight: bold;">⚠️ Este inicio de sesión es nuevo desde un dispositivo y ubicación desconocidos.</p>' 
-                         if login_alert.is_suspicious else ''}
-                    </div>
-                    
-                    <div style="background-color: {'#fef2f2' if login_alert.is_suspicious else '#f0fdf4'}; 
-                                border-left: 4px solid {'#dc2626' if login_alert.is_suspicious else '#02ab74'}; 
-                                padding: 15px; margin: 20px 0;">
-                        <p style="margin: 0;">
-                            <strong>{'¿No fuiste tú?' if login_alert.is_suspicious else '¿Fuiste tú?'}</strong><br>
-                            {f'Si no reconoces este inicio de sesión, <strong>cambia tu contraseña inmediatamente</strong> y activa la autenticación de dos factores.'
-                             if login_alert.is_suspicious 
-                             else 'Si fuiste tú, puedes ignorar este mensaje. Es solo una notificación de seguridad.'}
-                        </p>
-                    </div>
-                    
-                    <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">
-                        Este es un mensaje automático de seguridad. Si deseas desactivar estas alertas, 
-                        puedes hacerlo en la configuración de tu cuenta.
-                    </p>
-                </div>
-            """
-            
-            # Enviar email
-            success = self.email_service.send_email(
-                to_email=user.email,
-                subject=subject,
-                html_content=html_content
-            )
-            
-            if success:
-                # Marcar como enviado
-                login_alert.notification_sent = True
-                login_alert.notification_sent_at = datetime.now(timezone.utc)
-                db.commit()
-                
-            
-            return success
-            
-        except Exception as e:
-            logger.exception(f"Error sending login alert email to user {user.id}: {e}")
-            return False
 
     @staticmethod
     def get_recent_login_alerts(

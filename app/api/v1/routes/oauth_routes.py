@@ -114,6 +114,7 @@ from typing import Annotated, Optional, List
     description="Google redirige aquí después de que el usuario autoriza"
 )
 async def google_callback(
+    request: Request,
     code: Annotated[str, Query(description="Código de autorización de Google")],
     state: Annotated[str, Query(description="State para verificación CSRF")],
     db: Session = Depends(get_db),
@@ -158,11 +159,26 @@ async def google_callback(
         )
 
     try:
-        # Procesar callback: intercambiar code → perfil → JWT
-        jwt_token = await OAuthService.handle_google_callback(
+        # Procesar callback: intercambiar code → perfil → tokens
+        jwt_token, refresh_token = await OAuthService.handle_google_callback(
             code=code,
             redirect_uri=GOOGLE_CALLBACK_URI,
             db=db
+        )
+
+        # Crear sesión activa
+        from app.services.session_service import SessionService
+        from app.services.auth_service import get_client_info
+        ip_address, user_agent = get_client_info(request)
+        
+        SessionService.create_session(
+            user_id=None,  # Se extrae del token en el servicio si es necesario, pero aquí ya lo tenemos del handle
+            access_token=jwt_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db,
+            is_current=True
         )
 
         logger.info("Google OAuth completado, redirigiendo a Angular con JWT")
@@ -238,6 +254,7 @@ def github_login():
     description="GitHub redirige aquí después de que el usuario autoriza"
 )
 async def github_callback(
+    request: Request,
     code: Annotated[str, Query(description="Código de autorización de GitHub")],
     state: Annotated[str, Query(description="State para verificación CSRF")],
     db: Session = Depends(get_db),
@@ -274,10 +291,26 @@ async def github_callback(
         )
 
     try:
-        jwt_token = await OAuthService.handle_github_callback(
+        # Procesar callback
+        jwt_token, refresh_token = await OAuthService.handle_github_callback(
             code=code,
             redirect_uri=GITHUB_CALLBACK_URI,
             db=db
+        )
+
+        # Crear sesión activa
+        from app.services.session_service import SessionService
+        from app.services.auth_service import get_client_info
+        ip_address, user_agent = get_client_info(request)
+        
+        SessionService.create_session(
+            user_id=None,
+            access_token=jwt_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db,
+            is_current=True
         )
 
         logger.info("GitHub OAuth completado, redirigiendo a Angular con JWT")

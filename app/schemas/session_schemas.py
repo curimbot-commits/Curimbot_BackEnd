@@ -6,11 +6,15 @@ class ActiveSessionOut(BaseModel):
     """Schema para retornar información de sesión activa al frontend"""
     id: int
     device: str
+    browser: Optional[str] = "Navegador"
+    os: Optional[str] = "Sistema Operativo"
+    device_type: Optional[str] = "Desktop"
     location: Optional[str] = "Ubicación desconocida"
     ip_address: str
     last_active: datetime
     created_at: datetime
     is_current: bool
+    is_active: bool = True
     expires_at: datetime
     
     class Config:

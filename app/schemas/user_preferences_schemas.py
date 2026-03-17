@@ -21,6 +21,13 @@ class LanguageEnum(str, Enum):
     EN = "en"
 
 
+class WeeklySummaryFormatEnum(str, Enum):
+    """Formatos disponibles para el resumen semanal"""
+    PDF = "pdf"
+    EXCEL = "excel"
+
+
+
 # ========================================
 # NOTIFICATION PREFERENCES
 # ========================================
@@ -30,16 +37,22 @@ class NotificationPreferencesUpdate(BaseModel):
     email_notifications: Optional[bool] = None
     push_notifications: Optional[bool] = None
     weekly_summary: Optional[bool] = None
+    weekly_summary_format: Optional[WeeklySummaryFormatEnum] = Field(None, description="Formato del resumen semanal (pdf, excel)")
     login_alerts: Optional[bool] = Field(None, description="Alertas de inicio de sesión")
+    security_alerts: Optional[bool] = Field(None, description="Alertas de seguridad y cambios de cuenta")
+
     class Config:
         json_schema_extra = {
             "example": {
                 "email_notifications": True,
                 "push_notifications": False,
                 "weekly_summary": True,
-                "login_alerts": True
+                "weekly_summary_format": "pdf",
+                "login_alerts": True,
+                "security_alerts": True
             }
         }
+
 class InterfacePreferencesUpdate(BaseModel):
     """Actualización de preferencias de interfaz"""
     language: Optional[LanguageEnum] = Field(None, description="Idioma de la interfaz")
@@ -81,7 +94,10 @@ class UserPreferencesResponse(BaseModel):
     email_notifications: bool = True
     push_notifications: bool = False
     weekly_summary: bool = True
+    weekly_summary_format: WeeklySummaryFormatEnum = WeeklySummaryFormatEnum.PDF
     login_alerts: bool = True
+    security_alerts: bool = True
+
     
     # Interfaz
     language: LanguageEnum = LanguageEnum.ES

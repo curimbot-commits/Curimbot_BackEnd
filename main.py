@@ -15,6 +15,7 @@ NOTA: recreate_database() está activado para desarrollo.
 
 import logging
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -176,6 +177,14 @@ async def lifespan(app: FastAPI):
             )
     except Exception as e:
         logger.error(f"Error inicializando VoiceRAGEngine: {e}", exc_info=True)
+
+    # 5. Scheduler de Resumen Semanal
+    try:
+        from app.core.scheduler import start_weekly_summary_scheduler
+        asyncio.create_task(start_weekly_summary_scheduler())
+        logger.info("Tarea de resumen semanal programada")
+    except Exception as e:
+        logger.error(f"Error iniciando scheduler: {e}")
 
     logger.info("✅ Curim iniciado correctamente")
 

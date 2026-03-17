@@ -15,7 +15,7 @@ from app.schemas.session_schemas import (
 from app.services.session_service import SessionService
 from app.services.auth_service import get_current_user
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(prefix="/auth/sessions", tags=["sessions"])
 logger = logging.getLogger(__name__)
 
 
@@ -52,8 +52,8 @@ def get_active_sessions(
         )
 
 
-@router.delete(
-    "/{session_id}",
+@router.post(
+    "/revoke/{session_id}",
     summary="Revocar sesión específica",
     description="Revoca una sesión específica del usuario actual"
 )
@@ -96,7 +96,7 @@ def revoke_session(
 
 
 @router.post(
-    "/revoke-all",
+    "/revoke-others",
     summary="Revocar todas las sesiones",
     description="Revoca todas las sesiones del usuario excepto la actual (opcional)"
 )

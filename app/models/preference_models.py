@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Enum as SqlEnum
 
 from .base import Base
-from app.enums.enums import LogAction
+from app.enums.enums import LogAction, NotificationType, NotificationChannel, NotificationStatus
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -24,6 +24,9 @@ class UserPreferences(Base):
     push_notifications = Column(Boolean, default=False, nullable=False)
     weekly_summary = Column(Boolean, default=True, nullable=False)
     login_alerts = Column(Boolean, default=True, nullable=False)
+    security_alerts = Column(Boolean, default=True, nullable=False)
+    weekly_summary_format = Column(String(10), default="pdf", nullable=False)
+
     
     language = Column(String(5), default="es", nullable=False)
     theme = Column(String(10), default="light", nullable=False)
@@ -53,3 +56,23 @@ class Log(Base):
 
     def __repr__(self):
         return f"<Log(id={self.id}, user_id={self.user_id}, action={self.action})>"
+
+
+class NotificationHistory(Base):
+    """Registro histórico de notificaciones enviadas."""
+    __tablename__ = "notification_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    type = Column(SqlEnum(NotificationType, name="notification_type_enum"), nullable=False, index=True)
+    channel = Column(SqlEnum(NotificationChannel, name="notification_channel_enum"), nullable=False, index=True)
+    status = Column(SqlEnum(NotificationStatus, name="notification_status_enum"), nullable=False, index=True)
+    
+    error_detail = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+    user = relationship("User", back_populates="notifications")
+
+    def __repr__(self):
+        return f"<NotificationHistory(user_id={self.user_id}, type={self.type}, status={self.status})>"

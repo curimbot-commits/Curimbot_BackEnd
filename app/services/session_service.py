@@ -17,30 +17,47 @@ class SessionService:
     """Servicio para gestionar sesiones activas de usuarios"""
     
     @staticmethod
-    def extract_device_info(user_agent: str) -> str:
+    def extract_device_info(user_agent: str) -> dict:
         """
-        Extrae información legible del User-Agent
+        Extrae información detallada del User-Agent
         
         Args:
             user_agent: String del User-Agent
             
         Returns:
-            String formateado como "Chrome 120 on Windows 10"
+            Dict con browser, os, device_type y display_name
         """
         try:
             ua = parse(user_agent)
             browser = f"{ua.browser.family} {ua.browser.version_string.split('.')[0]}"
             os = f"{ua.os.family} {ua.os.version_string}" if ua.os.version_string else ua.os.family
             
+            device_type = "Desktop"
             if ua.is_mobile:
-                return f"{browser} on {os} (Mobile)"
+                device_type = "Mobile"
             elif ua.is_tablet:
-                return f"{browser} on {os} (Tablet)"
-            else:
-                return f"{browser} on {os}"
+                device_type = "Tablet"
+            elif ua.is_bot:
+                device_type = "Bot"
+                
+            display_name = f"{browser} on {os}"
+            if device_type != "Desktop":
+                display_name += f" ({device_type})"
+                
+            return {
+                "browser": browser,
+                "os": os,
+                "device_type": device_type,
+                "display_name": display_name
+            }
         except Exception as e:
             logger.warning(f"Error parsing user agent: {e}")
-            return "Dispositivo desconocido"
+            return {
+                "browser": "Desconocido",
+                "os": "Desconocido",
+                "device_type": "Desktop",
+                "display_name": "Dispositivo desconocido"
+            }
     
     @staticmethod
     def get_location_from_ip(ip_address: str) -> str:
@@ -95,7 +112,7 @@ class SessionService:
     
     @staticmethod
     def create_session(
-        user_id: int,
+        user_id: Optional[int],
         access_token: str,
         refresh_token: str,
         ip_address: str,
@@ -107,7 +124,7 @@ class SessionService:
         Crea una nueva sesión activa en la base de datos
         
         Args:
-            user_id: ID del usuario
+            user_id: ID del usuario (opcional si se puede extraer del token)
             access_token: Token de acceso JWT
             refresh_token: Token de refresh JWT
             ip_address: IP del cliente
@@ -119,6 +136,18 @@ class SessionService:
             ActiveSession creada
         """
         try:
+            # Si no se provee user_id, intentar extraerlo del token de acceso
+            if user_id is None:
+                try:
+                    payload = jwt.get_unverified_claims(access_token)
+                    user_id = int(payload.get("sub"))
+                except Exception as e:
+                    logger.error(f"No se pudo extraer user_id del token: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token inválido: user_id no encontrado"
+                    )
+
             # Extraer JTIs de los tokens
             access_jti = SessionService.extract_jti_from_token(access_token)
             refresh_jti = SessionService.extract_jti_from_token(refresh_token)
@@ -138,7 +167,8 @@ class SessionService:
             )
             
             # Extraer información del dispositivo
-            device = SessionService.extract_device_info(user_agent)
+            ua_info = SessionService.extract_device_info(user_agent)
+            device = ua_info["display_name"]
             location = SessionService.get_location_from_ip(ip_address)
             
             # Marcar otras sesiones como no actuales si esta es actual
@@ -202,6 +232,18 @@ class SessionService:
             
             sessions = query.order_by(ActiveSession.last_active.desc()).all()
             
+            # Aumentar sesiones con info de dispositivo para el frontend
+            for s in sessions:
+                if s.user_agent:
+                    info = SessionService.extract_device_info(s.user_agent)
+                    s.browser = info["browser"]
+                    s.os = info["os"]
+                    s.device_type = info["device_type"]
+                else:
+                    s.browser = "Desconocido"
+                    s.os = "Desconocido"
+                    s.device_type = "Desktop"
+
             return sessions
             
         except SQLAlchemyError as e:

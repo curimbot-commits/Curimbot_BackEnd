@@ -226,6 +226,13 @@ class AuthService:
                 blacklisted_at=datetime.now(timezone.utc)
             )
             db.add(blacklisted_token)
+
+            # También marcar la sesión activa como inactiva
+            from app.models.auth_models import ActiveSession
+            db.query(ActiveSession).filter(
+                ActiveSession.refresh_token_jti == jti
+            ).update({"is_active": False})
+
             db.commit()
             return True
         except JWTError:
@@ -301,6 +308,17 @@ class AuthService:
 
         access_token = security_service.create_access_token(token_data)
         refresh_token = security_service.create_refresh_token(token_data)
+
+        # Crear sesión activa en la base de datos
+        SessionService.create_session(
+            user_id=user.id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db,
+            is_current=True
+        )
 
         user.last_login = datetime.now(timezone.utc)
         db.commit()
@@ -398,6 +416,17 @@ class AuthService:
                     "role": new_user.role.name
                 })
 
+                # Crear sesión activa para el nuevo usuario
+                SessionService.create_session(
+                    user_id=new_user.id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    ip_address=ip_address or "unknown",
+                    user_agent="unknown",  # signup_user no recibe user_agent actualmente
+                    db=db,
+                    is_current=True
+                )
+
                 AuthService._log_login_attempt(
                     new_user.email, True, ip_address, db=db
                 )
@@ -476,6 +505,21 @@ class AuthService:
                     blacklisted_at=datetime.now(timezone.utc)
                 )
                 db.add(blacklisted_token)
+
+                # Actualizar los JTIs en la sesión activa correspondiente
+                from app.models.auth_models import ActiveSession
+                from app.services.session_service import SessionService
+                
+                new_access_jti = SessionService.extract_jti_from_token(new_access_token)
+                new_refresh_jti = SessionService.extract_jti_from_token(new_refresh_token)
+                
+                db.query(ActiveSession).filter(
+                    ActiveSession.refresh_token_jti == payload.get("jti")
+                ).update({
+                    "access_token_jti": new_access_jti,
+                    "refresh_token_jti": new_refresh_jti,
+                    "last_active": datetime.now(timezone.utc)
+                })
 
             return new_access_token, new_refresh_token
 

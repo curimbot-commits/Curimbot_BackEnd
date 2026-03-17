@@ -192,6 +192,26 @@ def change_password(
         
         # Registrar cambio exitoso en logs
         logger.info(f"Password changed successfully for user: {current_user.email}")
+        
+        # Enviar notificación de seguridad
+        try:
+            from app.core.config import RESEND_API_KEY, FROM_EMAIL
+            from app.services.email_service import EmailService
+            from app.services.notification_service import NotificationService
+            from app.enums.enums import NotificationType
+            
+            email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
+            notification_service = NotificationService(email_service)
+            notification_service.send_notification(
+                user_id=current_user.id,
+                notification_type=NotificationType.SECURITY_ALERT,
+                subject="🔐 Contraseña Cambiada",
+                content=f"Hola {current_user.name}, te informamos que tu contraseña ha sido actualizada correctamente.",
+                db=db
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send password change notification: {e}")
+
         return {"message": "Contraseña cambiada exitosamente"}
         
     except InvalidCredentialsError as e:

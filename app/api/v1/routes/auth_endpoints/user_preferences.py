@@ -691,13 +691,9 @@ def send_test_email(
                 detail="Error al obtener las preferencias del usuario"
             )
         
-        # Verificar que las notificaciones por email están habilitadas
+        # Si las notificaciones están desactivadas, registramos un aviso pero permitimos el email de prueba
         if not prefs.email_notifications:
-            logger.warning(f"Las notificaciones por email están desactivadas para el usuario {current_user.id}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Las notificaciones por email están desactivadas"
-            )
+            logger.info(f"Enviando email de prueba a pesar de que las notificaciones están desactivadas para el usuario {current_user.id}")
 
         # Enviar email de prueba personalizado
         result = email_service.send_email(

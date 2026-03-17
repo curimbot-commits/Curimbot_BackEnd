@@ -4,8 +4,10 @@ app/services/email_service.py
 """
 import resend
 import logging
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime, timezone
+
+from app.services.email_templates import EmailTemplates
 
 logger = logging.getLogger(__name__)
 
@@ -23,33 +25,52 @@ class EmailService:
         """
         resend.api_key = api_key
         self.from_email = from_email
+        self.templates = EmailTemplates()
     
     def send_email(
         self, 
         to_email: str, 
         subject: str, 
         html_content: str,
-        from_email: Optional[str] = None
+        from_email: Optional[str] = None,
+        attachments: Optional[List[dict]] = None
     ) -> Optional[dict]:
         """
-        Envía un email usando Resend
+        Envía un email usando Resend con soporte para adjuntos
         
         Args:
             to_email: Email del destinatario
             subject: Asunto del email
             html_content: Contenido HTML del email
             from_email: Email del remitente (opcional)
+            attachments: Lista de dicts con {"filename": str, "content": bytes}
             
         Returns:
             Respuesta de Resend o None si falla
         """
         try:
-            response = resend.Emails.send({
+            params = {
                 "from": from_email or self.from_email,
                 "to": [to_email],
                 "subject": subject,
                 "html": html_content,
-            })
+            }
+            
+            if attachments:
+                # Resend espera contenido en base64 o bytes si la librería lo maneja
+                # Para la librería de Python, se pasan los bytes directamente o una lista
+                # Convertimos bytes a lista si es necesario, o simplemente pasamos el dict
+                # Según docs: [{"filename": "invoice.pdf", "content": list(content_bytes)}] 
+                # o simplemente los bytes si la versión es reciente.
+                resend_attachments = []
+                for att in attachments:
+                    resend_attachments.append({
+                        "filename": att["filename"],
+                        "content": list(att["content"]) if isinstance(att["content"], bytes) else att["content"]
+                    })
+                params["attachments"] = resend_attachments
+
+            response = resend.Emails.send(params)
             return response
         except Exception as e:
             logger.error(f"Error sending email to {to_email}: {e}")
@@ -71,71 +92,10 @@ class EmailService:
             reset_token: Token de recuperación
             frontend_url: URL base del frontend
         """
-        reset_link = f"{frontend_url}/resetpassword?token={reset_token}"
-        
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #02ab74 0%, #7209b7 100%); 
-                          color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }}
-                .button {{ display: inline-block; background: #02ab74; color: white; 
-                          padding: 14px 28px; text-decoration: none; border-radius: 8px; 
-                          font-weight: bold; margin: 20px 0; }}
-                .button:hover {{ background: #028a5f; }}
-                .warning {{ background: #fff3cd; border-left: 4px solid #ffc107; 
-                           padding: 12px; margin: 20px 0; border-radius: 4px; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-                .icon {{ font-size: 48px; margin-bottom: 10px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div class="icon">🔒</div>
-                    <h2>Recuperación de Contraseña</h2>
-                </div>
-                <div class="content">
-                    <p>Hola {user_name},</p>
-                    <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta.</p>
-                    <p>Haz clic en el botón de abajo para crear una nueva contraseña:</p>
-                    
-                    <div style="text-align: center;">
-                        <a href="{reset_link}" class="button">Restablecer Contraseña</a>
-                    </div>
-                    
-                    <div class="warning">
-                        <strong>⚠️ Importante:</strong>
-                        <ul style="margin: 10px 0;">
-                            <li>Este enlace expirará en <strong>1 hora</strong></li>
-                            <li>Si no solicitaste este cambio, ignora este correo</li>
-                            <li>Nunca compartas este enlace con nadie</li>
-                        </ul>
-                    </div>
-                    
-                    <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                        Si el botón no funciona, copia y pega este enlace en tu navegador:
-                    </p>
-                    <p style="word-break: break-all; font-size: 12px; color: #666;">
-                        {reset_link}
-                    </p>
-                    
-                    <p style="margin-top: 20px;">
-                        <strong>Fecha de solicitud:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}
-                    </p>
-                </div>
-                <div class="footer">
-                    <p>© 2025 SecureDoc App. Todos los derechos reservados.</p>
-                    <p>Si no solicitaste este cambio, tu cuenta sigue siendo segura.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self.templates.password_reset(
+            user_name=user_name,
+            reset_link=f"{frontend_url}/resetpassword?token={reset_token}"
+        )
         
         return self.send_email(
             to_email=to_email,
@@ -155,52 +115,7 @@ class EmailService:
             to_email: Email del usuario
             user_name: Nombre del usuario
         """
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #02ab74 0%, #7209b7 100%); 
-                          color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }}
-                .success {{ background: #d4edda; border-left: 4px solid #28a745; 
-                           padding: 12px; margin: 20px 0; border-radius: 4px; color: #155724; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-                .icon {{ font-size: 48px; margin-bottom: 10px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div class="icon">✅</div>
-                    <h2>Contraseña Actualizada</h2>
-                </div>
-                <div class="content">
-                    <p>Hola {user_name},</p>
-                    
-                    <div class="success">
-                        <strong>✅ Tu contraseña ha sido cambiada exitosamente</strong>
-                    </div>
-                    
-                    <p>Tu contraseña se ha actualizado correctamente.</p>
-                    <p><strong>Fecha del cambio:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
-                    
-                    <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 20px 0; border-radius: 4px;">
-                        <strong>⚠️ ¿No fuiste tú?</strong>
-                        <p style="margin: 10px 0 0 0;">
-                            Si no realizaste este cambio, contacta con soporte inmediatamente.
-                        </p>
-                    </div>
-                </div>
-                <div class="footer">
-                    <p>© 2025 SecureDoc App. Todos los derechos reservados.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self.templates.password_changed(user_name=user_name)
         
         return self.send_email(
             to_email=to_email,
@@ -262,125 +177,56 @@ class EmailService:
             subject="Tu perfil ha sido actualizado",
             html_content=html_content
         )
-    
+
     def send_weekly_summary(
         self,
         to_email: str,
         user_name: str,
-        summary_data: dict
+        summary_data: dict,
+        attachment: Optional[dict] = None
     ) -> Optional[dict]:
         """
-        Envía resumen semanal de actividad
+        Envía resumen semanal con adjunto opcional
         
         Args:
             to_email: Email del usuario
             user_name: Nombre del usuario
-            summary_data: Datos del resumen (documentos, actividad, etc.)
+            summary_data: Datos para el HTML del correo
+            attachment: Dict con {"filename": str, "content": bytes}
         """
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #028a5e 0%, #5a058f 100%); 
-                          color: white; padding: 20px; border-radius: 8px 8px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 20px; }}
-                .stat-box {{ background: white; padding: 15px; margin: 10px 0; 
-                            border-radius: 8px; border-left: 4px solid #02ab74; }}
-                .stat-number {{ font-size: 24px; font-weight: bold; color: #02ab74; }}
-                .footer {{ text-align: center; margin-top: 20px; color: #666; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>📊 Tu Resumen Semanal</h2>
-                </div>
-                <div class="content">
-                    <p>Hola {user_name},</p>
-                    <p>Aquí está tu resumen de actividad de esta semana:</p>
-                    
-                    <div class="stat-box">
-                        <div class="stat-number">{summary_data.get('documents_uploaded', 0)}</div>
-                        <div>Documentos subidos</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-number">{summary_data.get('documents_viewed', 0)}</div>
-                        <div>Documentos visualizados</div>
-                    </div>
-                    
-                    <div class="stat-box">
-                        <div class="stat-number">{summary_data.get('documents_downloaded', 0)}</div>
-                        <div>Documentos descargados</div>
-                    </div>
-                    
-                    <p style="margin-top: 20px;">
-                        <a href="https://tuapp.com/dashboard" 
-                           style="background: #02ab74; color: white; padding: 10px 20px; 
-                                  text-decoration: none; border-radius: 5px; display: inline-block;">
-                            Ver Dashboard
-                        </a>
-                    </p>
-                </div>
-                <div class="footer">
-                    <p>© 2025 SecureDoc App. Todos los derechos reservados.</p>
-                    <p><a href="https://tuapp.com/settings">Gestionar preferencias de notificaciones</a></p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self.templates.weekly_summary(user_name, summary_data)
+        attachments = [attachment] if attachment else None
         
         return self.send_email(
             to_email=to_email,
-            subject=f"📊 Tu resumen semanal - {datetime.now(timezone.utc).strftime('%d/%m/%Y')}",
+            subject="📊 Tu resumen semanal - SecureDoc",
+            html_content=html_content,
+            attachments=attachments
+        )
+
+    def send_login_alert_email(self, user: Any, login_alert: Any) -> bool:
+        """Alerta de inicio de sesión"""
+        html_content = self.templates.login_alert(user.name, login_alert)
+        success = self.send_email(
+            to_email=user.email,
+            subject="⚠️ Alerta de Seguridad - SecureDoc",
             html_content=html_content
         )
-    
+        return success is not None
+
     def send_preference_change_notification(
         self,
         to_email: str,
         user_name: str,
         preference_type: str
     ) -> Optional[dict]:
-        """
-        Envía notificación de cambio en preferencias
-        
-        Args:
-            to_email: Email del usuario
-            user_name: Nombre del usuario
-            preference_type: Tipo de preferencia modificada
-        """
+        """Envía notificación de cambio en preferencias"""
+        # Aquí también podríamos usar una plantilla si quisiéramos uniformidad
         html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #028a5e 0%, #5a058f 100%); 
-                          color: white; padding: 20px; border-radius: 8px; }}
-                .content {{ padding: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>⚙️ Preferencias Actualizadas</h2>
-                </div>
-                <div class="content">
-                    <p>Hola {user_name},</p>
-                    <p>Tus preferencias de <strong>{preference_type}</strong> han sido actualizadas exitosamente.</p>
-                    <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
-                </div>
-            </div>
-        </body>
-        </html>
+            <p>Hola <strong>{user_name}</strong>,</p>
+            <p>Tus preferencias de <strong>{preference_type}</strong> han sido actualizadas exitosamente.</p>
         """
-        
+        # Usamos el wrap genérico si existe o uno simple
         return self.send_email(
             to_email=to_email,
             subject="Tus preferencias han sido actualizadas",

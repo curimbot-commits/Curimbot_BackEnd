@@ -37,6 +37,7 @@ from app.schemas.password_reset_schemas import (
     TokenValidationResponse
 )
 from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
 from app.services.password_reset_service import PasswordResetService
 
 # Cargar variables de entorno
@@ -52,8 +53,9 @@ logger = logging.getLogger(__name__)
 
 # Inicializar servicios
 email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
+notification_service = NotificationService(email_service)
 password_reset_service = PasswordResetService(
-    email_service=email_service,
+    notification_service=notification_service,
     frontend_url=FRONTEND_URL
 )
 

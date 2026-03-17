@@ -11,7 +11,8 @@ from fastapi import HTTPException, status
 
 from app.models.models import User, PasswordResetToken
 from app.schemas.auth_schemas import get_password_hash
-from app.services.email_service import EmailService
+from app.services.notification_service import NotificationService
+from app.enums.enums import NotificationType
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,15 @@ logger = logging.getLogger(__name__)
 class PasswordResetService:
     """Servicio para gestionar recuperación de contraseñas"""
     
-    def __init__(self, email_service: EmailService, frontend_url: str):
+    def __init__(self, notification_service: NotificationService, frontend_url: str):
         """
         Inicializa el servicio
         
         Args:
-            email_service: Instancia del servicio de email
+            notification_service: Instancia del servicio de notificaciones
             frontend_url: URL base del frontend
         """
-        self.email_service = email_service
+        self.notification_service = notification_service
         self.frontend_url = frontend_url
         self.token_expiry_hours = 1
     
@@ -92,12 +93,15 @@ class PasswordResetService:
             db.add(token_record)
             db.commit()
             
-            # Enviar email
-            result = self.email_service.send_password_reset_email(
-                to_email=user.email,
-                user_name=user.name,
-                reset_token=reset_token,
-                frontend_url=self.frontend_url
+            # Enviar notificación via central
+            self.notification_service.send_notification(
+                db=db,
+                user_id=user.id,
+                event_type=NotificationType.PASSWORD_RESET,
+                data={
+                    "token": reset_token,
+                    "frontend_url": self.frontend_url
+                }
             )
             
             return standard_response
@@ -187,10 +191,12 @@ class PasswordResetService:
             # 5. Guardar cambios en la DB
             db.commit()
 
-            # 6. Enviar email de confirmación
-            self.email_service.send_password_changed_confirmation(
-                to_email=user.email,
-                user_name=user.name
+            # 6. Enviar notificación de confirmación
+            self.notification_service.send_notification(
+                db=db,
+                user_id=user.id,
+                event_type=NotificationType.PASSWORD_CHANGED,
+                data={}
             )
 
 

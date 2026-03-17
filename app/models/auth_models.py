@@ -62,6 +62,7 @@ class User(Base, TimestampMixin):
     login_alerts = relationship("LoginAlert", back_populates="user", cascade="all, delete-orphan")
     active_sessions = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
     reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("NotificationHistory", back_populates="user", cascade="all, delete-orphan")
     Curim_conversations = relationship("CurimConversation", back_populates="user")
 
     def __repr__(self):
