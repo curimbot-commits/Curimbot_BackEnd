@@ -226,11 +226,12 @@ class SessionService:
             
             if active_only:
                 from app.core.config import settings
-                inactivity_limit = datetime.now(timezone.utc) - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
+                now = datetime.now(timezone.utc)
+                inactivity_limit = now - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
                 
                 query = query.filter(
                     ActiveSession.is_active == True,
-                    ActiveSession.expires_at > datetime.now(timezone.utc),
+                    ActiveSession.expires_at > now,
                     ActiveSession.last_active > inactivity_limit
                 )
             
@@ -410,10 +411,11 @@ class SessionService:
         """
         try:
             from app.core.config import settings
-            inactivity_limit = datetime.now(timezone.utc) - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
+            now = datetime.now(timezone.utc)
+            inactivity_limit = now - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
             
             expired = db.query(ActiveSession).filter(
-                (ActiveSession.expires_at < datetime.now(timezone.utc)) |
+                (ActiveSession.expires_at < now) |
                 (ActiveSession.last_active < inactivity_limit) |
                 (ActiveSession.is_active == False)
             )

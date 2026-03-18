@@ -201,10 +201,15 @@ class AuthService:
             ).first()
             
             if session:
-                # Si la sesión no está activa o el token no coincide, o expiró por inactividad
+                # Asegurar que last_active tenga información de zona horaria si la base de datos devuelve naive
+                last_active = session.last_active
+                if last_active.tzinfo is None:
+                    last_active = last_active.replace(tzinfo=timezone.utc)
+                
+                # Si la sesión no está activa o expiró por inactividad
                 inactivity_limit = datetime.now(timezone.utc) - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
                 
-                if not session.is_active or session.last_active < inactivity_limit:
+                if not session.is_active or last_active < inactivity_limit:
                     # Si expiró por inactividad, marcar como inactiva en BD si aún no lo está
                     if session.is_active:
                         session.is_active = False
