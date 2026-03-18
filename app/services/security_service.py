@@ -12,10 +12,13 @@ logger = logging.getLogger(__name__)
 # ========================================
 #  CONFIGURACIÓN
 # ========================================
-SECRET_KEY = os.getenv("SECRET_KEY", "cij0OQ1JEHmiHVrGfr9PSn27TxU5PLhbdBW6APN33BY=")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
+from app.core.config import settings
+
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
+inactivity_timeout = settings.SESSION_INACTIVITY_TIMEOUT_MINUTES
 
 #  ÚNICA instancia de pwd_context en toda la aplicación
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")

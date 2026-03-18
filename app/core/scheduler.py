@@ -54,6 +54,15 @@ async def start_weekly_summary_scheduler():
                 db = SessionLocal()
                 try:
                     weekly_service.process_all_summaries(db)
+                    
+                    # Limpieza de sesiones y tokens (Aprovechamos el trigger semanal o forzado)
+                    from app.services.session_service import SessionService
+                    from app.services.auth_service import AuthService
+                    
+                    session_count = SessionService.cleanup_expired_sessions(db)
+                    AuthService._cleanup_expired_tokens(db)
+                    logger.info(f"Limpieza completada: {session_count} sesiones eliminadas.")
+                    
                 finally:
                     db.close()
                 
@@ -64,6 +73,14 @@ async def start_weekly_summary_scheduler():
                 # Esperar una hora para no enviar múltiples veces en la misma ventana
                 await asyncio.sleep(3600)
             else:
+                # Tarea de mantenimiento rápida cada vez que despertamos (15 min)
+                db = SessionLocal()
+                try:
+                    from app.services.session_service import SessionService
+                    SessionService.cleanup_expired_sessions(db)
+                finally:
+                    db.close()
+                
                 # Esperar 15 minutos antes de la siguiente verificación
                 await asyncio.sleep(900)
                 

@@ -186,8 +186,35 @@ class AuthService:
         """
         try:
             payload = security_service.decode_token(token)
-            if AuthService.is_token_blacklisted(payload.get("jti"), db):
+            jti = payload.get("jti")
+            
+            # Verificar si el token está en lista negra
+            if AuthService.is_token_blacklisted(jti, db):
                 raise TokenBlacklistedError("Token ha sido revocado")
+            
+            # Verificar expiración por inactividad de la sesión
+            from app.models.auth_models import ActiveSession
+            from app.core.config import settings
+            
+            session = db.query(ActiveSession).filter(
+                (ActiveSession.access_token_jti == jti) | (ActiveSession.refresh_token_jti == jti)
+            ).first()
+            
+            if session:
+                # Si la sesión no está activa o el token no coincide, o expiró por inactividad
+                inactivity_limit = datetime.now(timezone.utc) - timedelta(minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES)
+                
+                if not session.is_active or session.last_active < inactivity_limit:
+                    # Si expiró por inactividad, marcar como inactiva en BD si aún no lo está
+                    if session.is_active:
+                        session.is_active = False
+                        db.commit()
+                    raise TokenExpiredError("Sesión expirada por inactividad")
+                
+                # Actualizar actividad si es token de acceso
+                if payload.get("type") == "access":
+                    SessionService.update_session_activity(jti, db)
+            
             return payload
 
         except JWTError as e:

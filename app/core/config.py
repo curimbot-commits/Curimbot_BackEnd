@@ -25,11 +25,21 @@ class Settings(BaseSettings):
     RESEND_API_KEY: Optional[str] = None
     FROM_EMAIL: Optional[str] = None
 
-    # ── Autenticación ──────────────────────────────────────────────────────────
+    # ── Autenticación (Tiempos de expiración) ──────────────────────────────────
     SECRET_KEY: str = "defaultsecret"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    
+    # Tiempo de vida del token de acceso (recomendado 15-30 min)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # Tiempo máximo de la sesión completa (Refresh Token)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    
+    # Tiempo de inactividad permitido antes de cerrar sesión (minutos)
+    SESSION_INACTIVITY_TIMEOUT_MINUTES: int = 60
+    
+    # Tiempo máximo de vida absoluta de una sesión (días)
+    MAX_SESSION_LIFETIME_DAYS: int = 30
 
     # ── Base de datos ──────────────────────────────────────────────────────────
     DATABASE_URL: str = "sqlite:///./asistente_docs.db"
