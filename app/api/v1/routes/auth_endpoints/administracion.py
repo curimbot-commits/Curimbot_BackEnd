@@ -14,8 +14,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models.models import User
+from app.models.models import User, ActiveSession
 from app.enums.enums import UserRole
+from app.services.session_service import SessionService
 
 from app.schemas.common_schemas import LoginStatsResponse
 from app.schemas.user_schemas import UserCreate, UserInfoResponse, UserManagementResponse
@@ -278,6 +279,31 @@ def delete_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
+        )
+
+@router.delete("/{session_id}", tags=["sessions"], summary="Revocar sesión (Legacy/Compatibilidad)")
+def revoke_session_legacy(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Punto de refinamiento Phase 2.
+    Resuelve el error 404 cuando el frontend llama a DELETE /auth/{id}.
+    Redirige la lógica al servicio de sesiones.
+    """
+    try:
+        return SessionService.revoke_session(
+            session_id=session_id,
+            user_id=current_user.id,
+            db=db,
+            requester_user_id=current_user.id
+        )
+    except Exception as e:
+        logger.exception(f"Error en revocación legacy para sesión {session_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al revocar sesión"
         )
 
 

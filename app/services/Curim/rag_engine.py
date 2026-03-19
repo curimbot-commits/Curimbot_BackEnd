@@ -320,25 +320,32 @@ Responde de forma natural y conversacional basándote en el contexto proporciona
                 )
             
             # 2. GENERAR RESPUESTA EN TEXTO
+            # Detección básica de idioma para refuerzo (Punto 1 Refinamiento Phase 2)
+            eng_indicators = ['what', 'how', 'is', 'the', 'can', 'you', 'my', 'summary', 'about', 'who', 'where', 'when', 'which']
+            likely_english = any(word in question.lower().split() for word in eng_indicators)
+            target_lang = "ENGLISH" if likely_english else "SPANISH"
+
             system_instruction = (
                 "Eres ATHENIA, un asistente experto en análisis de documentos. "
                 "Tu objetivo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado. "
-                "REGLA CRÍTICA: Responde siempre en el mismo idioma en el que el usuario te hable (Español o Inglés). "
-                "Si no sabes la respuesta basándote en el contexto, dilo honestamente."
+                f"REGLA CRÍTICA: Debes responder OBLIGATORIAMENTE en idioma {target_lang}. "
+                f"Si el usuario pregunta en Inglés, tu respuesta DEBE ser 100% en Inglés. "
+                "No mezcles idiomas. No traduzcas conceptos clave si no es necesario."
             )
-            prompt = f"""{system_instruction}
+            
+            prompt = f"""INSTRUCCIÓN DE SISTEMA: {system_instruction}
 
 Basado en el siguiente contexto, responde la pregunta de forma DETALLADA y COMPLETA.
-Incluye todos los detalles relevantes, ejemplos si los hay, y explica con profundidad.
+Usa párrafos cortos y puntos de lista claros con ESPACIADO (doble salto de línea) entre secciones para mejorar la legibilidad.
 No resumas innecesariamente — se espera una respuesta extensa y bien desarrollada.
 
 CONTEXTO:
 {context}
 
-PREGUNTA:
+PREGUNTA (Idioma detectado: {target_lang}):
 {question}
 
-RESPUESTA DETALLADA:"""
+RESPUESTA DETALLADA EN {target_lang}:"""
             
             # Usar text_model (gemini-1.5-flash)
             response = self.text_model.generate_content(
