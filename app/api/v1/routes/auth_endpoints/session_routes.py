@@ -95,6 +95,20 @@ def revoke_session(
         )
 
 
+@router.delete(
+    "/{session_id}",
+    summary="Revocar sesión (Compatibilidad)",
+    description="Revoca una sesión específica. Usado por el frontend legacy."
+)
+def revoke_session_legacy(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Refenvía a la lógica de revocación estándar pero vía DELETE /auth/{id}"""
+    return revoke_session(session_id, current_user, db)
+
+
 @router.post(
     "/revoke-others",
     summary="Revocar todas las sesiones",

@@ -58,13 +58,13 @@ class WeeklySummaryService:
         if format_choice == 'excel':
             content = ReportService.generate_excel_report(user.name, stats.dict())
             attachment = {
-                "filename": f"Resumen_Semanal_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                "filename": f"Resumen_Semanal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 "content": content
             }
         else:
             content = ReportService.generate_pdf_report(user.name, stats.dict())
             attachment = {
-                "filename": f"Resumen_Semanal_{datetime.now().strftime('%Y%m%d')}.pdf",
+                "filename": f"Resumen_Semanal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                 "content": content
             }
             

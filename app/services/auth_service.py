@@ -780,18 +780,6 @@ class AuthService:
     def activate_user(admin_user: User, target_user_id: int, db: Session) -> User:
         """
         Reactiva la cuenta de un usuario previamente desactivado.
-
-        Args:
-            admin_user: Usuario administrador que realiza la acción.
-            target_user_id: ID del usuario a reactivar.
-            db: Sesión de base de datos.
-
-        Returns:
-            User: Usuario reactivado.
-
-        Raises:
-            PermissionDeniedError: Si no tiene permisos de administrador.
-            UserNotFoundError: Si el usuario no existe.
         """
         try:
             if admin_user.role.name != "admin":
@@ -812,6 +800,35 @@ class AuthService:
             raise
         except Exception as e:
             logger.exception(f"Error activating user: {e}")
+            raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+    @staticmethod
+    def delete_user(admin_user: User, target_user_id: int, db: Session) -> bool:
+        """
+        Elimina permanentemente un usuario de la base de datos.
+        Punto de refinamiento 9.
+        """
+        try:
+            if admin_user.role.name != "admin":
+                raise PermissionDeniedError("Se requieren permisos de administrador")
+
+            target_user = db.query(User).filter(User.id == target_user_id).first()
+            if not target_user:
+                raise UserNotFoundError("Usuario no encontrado")
+
+            if admin_user.id == target_user_id:
+                raise PermissionDeniedError("No puede eliminarse a sí mismo")
+
+            with AuthService.db_transaction(db):
+                db.delete(target_user)
+            
+            logger.info(f"User {target_user.email} deleted by admin {admin_user.email}")
+            return True
+
+        except (PermissionDeniedError, UserNotFoundError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error deleting user: {e}")
             raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 

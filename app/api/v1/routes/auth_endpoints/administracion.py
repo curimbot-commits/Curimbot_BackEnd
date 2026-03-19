@@ -248,6 +248,39 @@ def activate_user(
         )
 
 
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    admin_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Elimina permanentemente un usuario.
+    Solo disponible para administradores.
+    Punto de refinamiento 9.
+    """
+    try:
+        if user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID de usuario inválido"
+            )
+
+        AuthService.delete_user(admin_user, user_id, db)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    except PermissionDeniedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except UserNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error deleting user {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+
 @router.get("/users/{user_id}/login-stats", response_model=LoginStatsResponse)
 def get_user_login_stats(
     user_id: int,

@@ -16,9 +16,12 @@ class NotificationService:
     Se encarga de verificar preferencias y despachar a los canales correspondientes.
     """
 
+    # Caché simple en memoria para evitar duplicados recientes (punto 6 de refinamiento)
+    # Formato: {(user_id, event_type): last_sent_timestamp}
+    _recent_notifications = {}
+
     def __init__(self, email_service: EmailService):
         self.email_service = email_service
-        # En el futuro se pueden inyectar push_service, in_app_service, etc.
 
     def send_notification(
         self,
@@ -28,19 +31,19 @@ class NotificationService:
         data: Dict[str, Any]
     ) -> List[NotificationHistory]:
         """
-        Envía una notificación al usuario basándose en sus preferencias.
-
-        Args:
-            db: Sesión de base de datos
-            user_id: ID del usuario destinatario
-            event_type: Tipo de evento (LOGIN_ALERT, etc.)
-            data: Diccionario con los datos para la plantilla (user_name, etc.)
-
-        Returns:
-            Lista de registros de historial creados
+        Envía una notificación al usuario basándose en sus preferencias y evitando duplicados recientes.
         """
         results = []
         
+        # 0. Evitar duplicados en la última hora
+        now = datetime.now(timezone.utc)
+        cache_key = (user_id, event_type)
+        if cache_key in self._recent_notifications:
+            last_sent = self._recent_notifications[cache_key]
+            if (now - last_sent).total_seconds() < 3600: # 1 hora de margen
+                logger.info(f"Notification {event_type} for user {user_id} skipped (already sent recently)")
+                return results
+
         # 1. Obtener usuario y sus preferencias
         user = db.query(User).filter(User.id == user_id).first()
         if not user:

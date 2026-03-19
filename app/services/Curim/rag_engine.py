@@ -320,7 +320,15 @@ Responde de forma natural y conversacional basándote en el contexto proporciona
                 )
             
             # 2. GENERAR RESPUESTA EN TEXTO
-            prompt = f"""Basado en el siguiente contexto, responde la pregunta de forma DETALLADA y COMPLETA.
+            system_instruction = (
+                "Eres ATHENIA, un asistente experto en análisis de documentos. "
+                "Tu objetivo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado. "
+                "REGLA CRÍTICA: Responde siempre en el mismo idioma en el que el usuario te hable (Español o Inglés). "
+                "Si no sabes la respuesta basándote en el contexto, dilo honestamente."
+            )
+            prompt = f"""{system_instruction}
+
+Basado en el siguiente contexto, responde la pregunta de forma DETALLADA y COMPLETA.
 Incluye todos los detalles relevantes, ejemplos si los hay, y explica con profundidad.
 No resumas innecesariamente — se espera una respuesta extensa y bien desarrollada.
 
@@ -490,14 +498,14 @@ Responde de forma natural y conversacional basándote en el contexto proporciona
             
             retrieved = self.vectorstore.similarity_search_with_score(
                 query=question,
-                k=12,
+                k=8,  # Reducido de 12 para optimizar velocidad
                 filter={"document_id": {"$in": doc_ids}}
             )
             
             if not retrieved:
                 return "No se encontró información relevante."
             
-            selected_docs = [doc for doc, score in retrieved[:6] if score < 1.5]
+            selected_docs = [doc for doc, score in retrieved[:5] if score < 1.5]
             
             if not selected_docs:
                 return "No se encontraron chunks con suficiente relevancia."
