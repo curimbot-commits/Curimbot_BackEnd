@@ -470,8 +470,9 @@ RESPUESTA DETALLADA EN {target_lang}:"""
             raise VoiceRAGEngineError("Live API no está disponible")
         
         # Preparar contexto de documentos si se especificaron
-        system_prompt = """Eres un asistente de voz experto en documentos.
-Responde de forma natural y conversacional basándote en el contexto proporcionado."""
+        system_prompt = """Eres ATHENIA, un asistente de voz experto en documentos.
+Responde de forma natural y conversacional basándote en el contexto proporcionado.
+REGLA CRÍTICA: Responde siempre en el mismo idioma en el que el usuario te hable (Español o Inglés)."""
         
         if document_ids and document_ids in self.context_cache:
             context = self.context_cache.get(str(document_ids))
@@ -579,13 +580,23 @@ Devuelve solo la transcripción, sin comentarios adicionales."""
     ) -> Tuple[bytes, float]:
         """Genera respuesta en audio usando Gemini"""
         try:
-            prompt = f"""CONTEXTO DISPONIBLE:
+            # Detección de idioma para voz (Punto crítico Refinamiento Phase 2)
+            eng_indicators = ['what', 'how', 'is', 'the', 'can', 'you', 'my', 'summary', 'about', 'who', 'where', 'when', 'which']
+            likely_english = any(word in question.lower().split() for word in eng_indicators)
+            target_lang = "ENGLISH" if likely_english else "SPANISH"
+
+            prompt = f"""INSTRUCCIÓN DE SISTEMA:
+Eres ATHENIA, un asistente experto en análisis de documentos.
+Tu objetivo es responder de forma NATURAL y CONVERSACIONAL basándote en el contexto.
+REGLA CRÍTICA: Debes responder OBLIGATORIAMENTE en idioma {target_lang}.
+
+CONTEXTO DISPONIBLE:
 {context}
 
-PREGUNTA DEL USUARIO:
+PREGUNTA DEL USUARIO (Idioma detectado: {target_lang}):
 {question}
 
-Responde de forma natural y conversacional:"""
+Responde en {target_lang}:"""
 
             # Generar respuesta con audio
             response = await self.text_model.generate_content_async(
