@@ -175,20 +175,17 @@ class DocumentService:
         file_type: Optional[FileType] = None
     ) -> Tuple[List[models.Document], int]:
 
-        # Obtener documentos filtrados por usuario y opcionalmente por tipo
-        documents = crud.get_documents_list(
-            db=db,
-            uploaded_by=user.id,
-            file_type=file_type,
-            skip=skip,
-            limit=limit
+        # Obtener documentos filtrados por usuario O públicos, y opcionalmente por tipo
+        # Un usuario ve sus propios documentos Y los documentos públicos (subidos por admin)
+        query = db.query(models.Document).filter(
+            (models.Document.uploaded_by == user.id) | (models.Document.is_public == 1)
         )
         
-        # También obtener el total para paginación (sin skip y limit)
-        total_query = db.query(models.Document).filter(models.Document.uploaded_by == user.id)
         if file_type:
-            total_query = total_query.filter(models.Document.file_type == file_type.value)
-        total = total_query.count()
+            query = query.filter(models.Document.file_type == file_type.value)
+            
+        total = query.count()
+        documents = query.order_by(models.Document.created_at.desc()).offset(skip).limit(limit).all()
 
         return documents, total
 
@@ -529,7 +526,10 @@ class DocumentService:
             if not user or not user.is_admin:
                 if not user:
                     raise HTTPException(status_code=401, detail="Usuario no autenticado")
-                query = query.filter(Document.uploaded_by == user.id)
+                # Usuarios normales ven sus docs O docs públicos
+                query = query.filter(
+                    (Document.uploaded_by == user.id) | (Document.is_public == 1)
+                )
 
             if text:
                 like_pattern = f"%{text}%"
@@ -739,7 +739,10 @@ class DocumentService:
         try:
             query = db.query(models.Document).options(joinedload(models.Document.owner))
             if user_id:
-                query = query.filter(models.Document.uploaded_by == user_id)
+                # Si se solicita para un usuario específico, incluir sus docs O los públicos
+                query = query.filter(
+                    (models.Document.uploaded_by == user_id) | (models.Document.is_public == 1)
+                )
                 
             documents = query.all()
             
