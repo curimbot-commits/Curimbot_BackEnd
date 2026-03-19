@@ -14,6 +14,7 @@ class DocumentCreate(BaseModel):
     text: Optional[str] = Field(default=None, description="Texto extraído del archivo")
     blob_enc: Optional[bytes] = Field(default=None, description="Contenido binario (encriptado o no)")
     uploaded_by: int = Field(..., gt=0, description="ID del usuario que sube el documento")
+    is_public: int = Field(default=0, description="0: privado, 1: público (compartido)")
 
 class DocumentUpdate(BaseModel):
     filename: Optional[str] = None
@@ -28,6 +29,7 @@ class DocumentOut(BaseModel):
     text: str
     created_at: datetime
     updated_at: datetime
+    is_public: int = Field(default=0)
 
     Curim_indexed: bool = Field(default=False, description="Si fue indexado en Curim")
     Curim_chunks: int = Field(default=0, description="Número de chunks creados")

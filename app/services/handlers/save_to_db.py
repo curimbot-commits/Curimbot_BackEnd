@@ -45,6 +45,8 @@ class SaveToDBHandler(DocumentHandler):
 
             blob_content = encrypted_content if encrypted_content else context.content
 
+            is_public = 1 if context.user.is_admin else 0
+            
             doc_data = DocumentCreate(
                 filename=context.filename,
                 mimetype=mimetype,
@@ -52,6 +54,7 @@ class SaveToDBHandler(DocumentHandler):
                 text=text,
                 blob_enc=blob_content,
                 uploaded_by=context.user.id,
+                is_public=is_public
             )
 
             logging.info(f"[SaveToDBHandler] Creando documento con file_type: {context.file_type}")

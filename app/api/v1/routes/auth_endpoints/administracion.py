@@ -290,20 +290,31 @@ def revoke_session_legacy(
     """
     Punto de refinamiento Phase 2.
     Resuelve el error 404 cuando el frontend llama a DELETE /auth/{id}.
-    Redirige la lógica al servicio de sesiones.
+    Si el usuario es Admin, intenta eliminar al usuario con ese ID si no es una sesión válida.
     """
     try:
+        # 1. Intentar revocar sesión
         return SessionService.revoke_session(
             session_id=session_id,
             user_id=current_user.id,
             db=db,
             requester_user_id=current_user.id
         )
+    except HTTPException as e:
+        # 2. Si falla con 404 y es ADMIN, intentar eliminar usuario
+        if e.status_code == 404 and current_user.role == "admin":
+            try:
+                AuthService.delete_user(current_user, session_id, db)
+                return Response(status_code=status.HTTP_204_NO_CONTENT)
+            except Exception:
+                # Si fallan ambos, propagar el 404 original
+                raise e
+        raise e
     except Exception as e:
-        logger.exception(f"Error en revocación legacy para sesión {session_id}: {e}")
+        logger.error(f"Error en ruta legacy /auth/{session_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al revocar sesión"
+            detail="Error interno del servidor"
         )
 
 

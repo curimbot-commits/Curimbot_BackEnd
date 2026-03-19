@@ -28,6 +28,7 @@ class Document(Base, TimestampMixin):
     text = Column(LONGTEXT, nullable=True)  
     blob_enc = Column(LONGBLOB, nullable=True) 
     encryption_version = Column(Integer, default=1, nullable=False)
+    is_public = Column(Integer, default=0, nullable=False) # 0: private, 1: public
 
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     owner = relationship("User", back_populates="documents")

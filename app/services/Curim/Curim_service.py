@@ -277,9 +277,13 @@ class CurimService:
         Returns:
             List[Document]: Documentos encontrados
         """
-        query = db.query(Document).filter(Document.uploaded_by == user_id)
+        # Obtener documentos del usuario O documentos públicos (compartidos por admin)
+        query = db.query(Document).filter(
+            (Document.uploaded_by == user_id) | (Document.is_public == 1)
+        )
         
         if document_ids:
+            # Si se especifican IDs, filtrar solo esos pero respetando la visibilidad
             query = query.filter(Document.id.in_(document_ids))
         
         return query.all()

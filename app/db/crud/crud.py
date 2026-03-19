@@ -221,6 +221,7 @@ def create_document(db: Session, document: DocumentCreate, file_type: FileType) 
             text=document.text,
             blob_enc=document.blob_enc,
             uploaded_by=document.uploaded_by,
+            is_public=document.is_public
         )
         
         # Guardar en BD
