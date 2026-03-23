@@ -69,42 +69,6 @@ ALLOWED_ORIGINS = [
 # Base de datos
 # ─────────────────────────────────────────────
 
-def _drop_all_tables() -> None:
-    """Elimina todas las tablas respetando FK constraints."""
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
-            conn.commit()
-
-        Base.metadata.drop_all(bind=engine)
-        logger.info("Todas las tablas eliminadas")
-
-    except Exception as e:
-        logger.error(f"Error al eliminar tablas: {e}")
-    finally:
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Error reactivando FK checks: {e}")
-
-
-def recreate_database() -> None:
-    """
-    SOLO PARA DESARROLLO: elimina y recrea la base de datos desde cero.
-    Controlar con la variable de entorno RECREATE_DB=true.
-    En producción usar Alembic.
-    """
-    _drop_all_tables()
-    Base.metadata.create_all(bind=engine)
-    logger.info("Tablas recreadas")
-
-    with SessionLocal() as db:
-        init_roles(db)
-        db.commit()
-        logger.info("Roles inicializados")
-
 
 def ensure_database() -> None:
     """
@@ -143,15 +107,7 @@ async def lifespan(app: FastAPI):
     logger.info("Iniciando aplicación Curim...")
 
     # 1. Base de datos
-    recreate_db = os.getenv("RECREATE_DB", "false").lower() == "true"
-    if recreate_db:
-        logger.warning(
-            "RECREATE_DB=true — eliminando y recreando base de datos. "
-            "Desactiva esto en producción."
-        )
-        recreate_database()
-    else:
-        ensure_database()
+    ensure_database()
 
     # 2. SessionStore
     try:

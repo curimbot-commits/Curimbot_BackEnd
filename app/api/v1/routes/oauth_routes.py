@@ -183,11 +183,11 @@ async def google_callback(
 
         logger.info("Google OAuth completado, redirigiendo a Angular con JWT")
 
-        # Redirigir a Angular con el token en la URL
-        # Angular lo capturará con ActivatedRoute.queryParams
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/auth/callback?token={jwt_token}"
-        )
+        # Redirigir a Angular estableciendo cookies
+        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback")
+        response.set_cookie(key="access_token", value=jwt_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        return response
 
     except OAuthError as e:
         logger.error(f"Error en callback de Google: {e}")
@@ -315,9 +315,11 @@ async def github_callback(
 
         logger.info("GitHub OAuth completado, redirigiendo a Angular con JWT")
 
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/auth/callback?token={jwt_token}"
-        )
+        # Redirigir estableciendo cookies seguras
+        response = RedirectResponse(url=f"{FRONTEND_URL}/auth/callback")
+        response.set_cookie(key="access_token", value=jwt_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        return response
 
     except OAuthError as e:
         logger.error(f"Error en callback de GitHub: {e}")

@@ -51,12 +51,13 @@ logger = logging.getLogger(__name__)
 
 @router.post("/login", response_model=Token, summary="Iniciar sesión")
 def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
     """
-    Autentica usuario con email y contraseña, retorna tokens de acceso.
+    Autentica usuario con email y contraseña, retorna y establece cookies HttpOnly.
     Si el usuario tiene 2FA habilitado, retorna `requires_2fa: true`.
 
     Raises:
@@ -84,6 +85,11 @@ def login(
             )
 
         access_token, refresh_token = result
+        
+        # Establecemos cookies HttpOnly
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -113,11 +119,12 @@ def login(
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED, summary="Registrar nuevo usuario")
 def signup(
     user_data: UserCreate,
+    response: Response,
     request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Crea una nueva cuenta de usuario y retorna tokens de autenticación.
+    Crea una nueva cuenta de usuario y retorna tokens de autenticación en cookies seguras.
     La contraseña debe tener mayúsculas, minúsculas, números y caracteres especiales.
 
     Raises:
@@ -144,6 +151,10 @@ def signup(
         except Exception as e:
             logger.warning(f"Failed to send welcome notification: {e}")
 
+        # Establecemos cookies HttpOnly
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
@@ -167,8 +178,7 @@ def signup(
 @router.post("/logout", status_code=status.HTTP_200_OK, summary="Cerrar sesión")
 def logout(
     response: Response,
-    token: str = Depends(oauth2_scheme),
-    data: RefreshTokenRequest = Body(...),
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -179,10 +189,14 @@ def logout(
         HTTPException 401: Token ya estaba invalidado.
     """
     try:
-        was_blacklisted = AuthService.logout_user(data.refresh_token, db)
-
-        if not was_blacklisted:
-            raise HTTPException(status_code=401, detail="Token ya estaba invalidado")
+        refresh_token = request.cookies.get("refresh_token")
+        if refresh_token:
+            was_blacklisted = AuthService.logout_user(refresh_token, db)
+            if not was_blacklisted:
+                logger.warning("Intentó hacer logout con un token ya invalidado.")
+        
+        response.delete_cookie(key="access_token", path="/", samesite="strict")
+        response.delete_cookie(key="refresh_token", path="/auth/refresh", samesite="strict")
 
         logger.info(f"User logged out: {current_user.email}")
         return {"message": "Sesión cerrada correctamente"}
@@ -199,7 +213,8 @@ def logout(
 
 @router.post("/refresh", response_model=Token, summary="Renovar tokens")
 def refresh_token(
-    data: RefreshTokenRequest,
+    response: Response,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -211,10 +226,18 @@ def refresh_token(
         HTTPException 404: Usuario no encontrado.
     """
     try:
-        access_token, refresh_token = AuthService.refresh_tokens(data.refresh_token, db)
+        refresh_token_cookie = request.cookies.get("refresh_token")
+        if not refresh_token_cookie:
+            raise HTTPException(status_code=401, detail="Refresh token ausente")
+
+        access_token, new_refresh_token = AuthService.refresh_tokens(refresh_token_cookie, db)
+        
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=new_refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+
         return {
             "access_token": access_token,
-            "refresh_token": refresh_token,
+            "refresh_token": new_refresh_token,
             "token_type": "bearer"
         }
 
@@ -239,6 +262,7 @@ def refresh_token(
 @router.post("/login-with-2fa", response_model=Token)
 def login_with_2fa(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     totp_code: str = Form(...),
     db: Session = Depends(get_db)
@@ -291,6 +315,10 @@ def login_with_2fa(
             logger.warning(f"Failed to record login alert: {alert_error}")
 
         logger.info(f"Successful login for user: {user.email}")
+        
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
+        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+
         return Token(access_token=access_token, refresh_token=refresh_token)
 
     except HTTPException:

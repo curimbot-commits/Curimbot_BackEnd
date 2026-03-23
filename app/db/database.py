@@ -16,17 +16,8 @@ load_dotenv()
 # CONFIGURACIÓN DE CONEXIÓN MYSQL
 # =========================================================
 
-# URL completa desde variable de entorno (preferida)
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Construida desde variables individuales si DATABASE_URL no existe
-if not DATABASE_URL:
-    DB_USER = os.getenv("DB_USER", "root")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "3306")
-    DB_NAME = os.getenv("DB_NAME", "curim_db")
-    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
+from app.core.config import settings
+DATABASE_URL = settings.get_database_url
 
 
 # =========================================================

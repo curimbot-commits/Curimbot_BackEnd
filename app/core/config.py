@@ -42,7 +42,18 @@ class Settings(BaseSettings):
     MAX_SESSION_LIFETIME_DAYS: int = 30
 
     # ── Base de datos ──────────────────────────────────────────────────────────
-    DATABASE_URL: str = "sqlite:///./asistente_docs.db"
+    DB_USER: str = "root"
+    DB_PASSWORD: str = ""
+    DB_HOST: str = "localhost"
+    DB_PORT: str = "3306"
+    DB_NAME: str = "curim_db"
+    DATABASE_URL: Optional[str] = None
+    
+    @property
+    def get_database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
 
     # ── CORS ───────────────────────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = ["http://localhost:4200"]

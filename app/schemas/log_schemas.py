@@ -1,11 +1,11 @@
 # =========================================================
 # IMPORTACIONES NECESARIAS
 # =========================================================
-from ..core.security import Token
+from .auth_schemas import Token
 from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
-from app.core.security import ChangePasswordRequest
+from app.schemas.auth_schemas import ChangePasswordRequest
 from app.enums.enums import FileType, LogAction
 from app.schemas.common_schemas import AuthStatsResponse, LoginStatsResponse
 from app.schemas.user_schemas import SecurityAlert, UserCreate, UserInfoResponse

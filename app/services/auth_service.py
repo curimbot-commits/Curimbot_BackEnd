@@ -13,7 +13,7 @@ from jose import JWTError, jwt
 import qrcode
 import secrets
 
-from app.core.security import (
+from app.schemas.auth_schemas import (
     AccountLockedError,
     ActiveSessionInfo,
     ActiveSessionsResponse,
@@ -885,7 +885,7 @@ class AuthService:
 # ========================================
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -895,6 +895,19 @@ def get_current_user(
         HTTPException 401: Si hay error de autenticación.
     """
     try:
+        token = request.cookies.get("access_token")
+        if not token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No autenticado",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+
         user = AuthService.get_user_from_token(token, db)
         return user
     except TokenExpiredError:
@@ -1095,8 +1108,8 @@ class TwoFactorAuthService:
     @staticmethod
     def save_backup_codes(user: 'User', codes: List[str], db: 'Session'):
         """Guarda códigos de respaldo hasheados."""
-        from app.core.security import get_password_hash
-        hashed_codes = [get_password_hash(code) for code in codes]
+        from app.services.security_service import hash_password
+        hashed_codes = [hash_password(code) for code in codes]
         user.backup_codes = ",".join(hashed_codes)
         db.commit()
 
@@ -1108,7 +1121,7 @@ class TwoFactorAuthService:
         Returns:
             True si el código es válido.
         """
-        from app.core.security import verify_password
+        from app.services.security_service import verify_password
 
         if not user.backup_codes:
             return False

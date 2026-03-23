@@ -67,8 +67,27 @@ logs/
 /media/
 static/
 
-# Node stuff if you have frontend bundled (like React/Vite in the same repo)
-node_modules/
+# Production Exclusions
+tests/
+diagnostic_imports.py
+pytest_error.log
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.log
 
-enc.key
+# Local development scripts
+debug_chroma.py
+fix_chroma.py
+refactor_time.py
+estructura.txt
+diagnostic_imports.py
+
+# Databases and storage
+*.db
+*.sqlite3
 storage/
+uploads/
+enc.key
