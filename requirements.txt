@@ -25,7 +25,7 @@ edge-tts==7.2.8
 email-validator==2.3.0
 es_core_news_md @ https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl#sha256=478b8bb3f3e8eb149192f7d80e7cd64f990b7e9bccbc5329df41a57e86326be2
 et_xmlfile==2.0.0
-fastapi==0.135.2
+fastapi[standard]==0.135.2
 fastjsonschema==2.21.2
 Flask==3.1.2
 Flask-JWT-Extended==4.7.1
