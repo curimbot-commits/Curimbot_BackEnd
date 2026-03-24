@@ -19,7 +19,7 @@ catalogue==2.0.10
 certifi==2023.7.22
 cffi==2.0.0
 charset-normalizer==3.4.4
-chromadb==1.2.1
+chromadb==0.6.3
 click==8.3.0
 cloudpathlib==0.23.0
 colorama==0.4.6
