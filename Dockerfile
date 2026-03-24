@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Dependencias del sistema + compilación
-RUN mkdir -p /app/uploads \
+RUN mkdir -p /app/uploads && \
     apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -26,5 +26,4 @@ COPY . .
 
 EXPOSE 8000
 
-# Ejecutar correctamente FastAPI
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
