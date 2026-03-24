@@ -2,8 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar PortAudio y dependencias del sistema
+# Dependencias del sistema + compilación
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    python3-dev \
     portaudio19-dev \
     libportaudio2 \
     libportaudiocpp0 \
@@ -11,10 +14,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
+# Actualizar pip
+RUN pip install --upgrade pip
+
+# Instalar dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 8000
 
-CMD ["fastapi", "run", "main.py", "--port", "8000"]
+# Ejecutar correctamente FastAPI
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
