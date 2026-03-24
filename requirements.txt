@@ -1,11 +1,21 @@
+# === Chroma primero para que pip resuelva sus deps antes que nada ===
 chromadb==0.6.3
 langchain-chroma==0.2.3
+
+# === OpenTelemetry: stack alineado 1.29.0 / 0.50b0 ===
+# - otel-proto 1.29.0 requiere protobuf>=5.0,<6.0  ✓ compatible con protobuf==5.29.5
+# - instrumentation-fastapi 0.50b0 requiere semantic-conventions==0.50b0 ✓
 opentelemetry-api==1.29.0
 opentelemetry-exporter-otlp-proto-common==1.29.0
 opentelemetry-exporter-otlp-proto-grpc==1.29.0
 opentelemetry-proto==1.29.0
 opentelemetry-sdk==1.29.0
 opentelemetry-semantic-conventions==0.50b0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-asgi==0.50b0
+opentelemetry-instrumentation==0.50b0
+opentelemetry-util-http==0.50b0
+
 importlib_metadata==6.8.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.1
@@ -14,6 +24,7 @@ alembic==1.18.4
 annotated-doc==0.0.2
 annotated-types==0.7.0
 anyio==4.11.0
+asttokens==3.0.0
 attrs==25.4.0
 backcall==0.2.0
 backoff==2.2.1
