@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -29,8 +30,8 @@ from app.api.v1.routes.session_store import get_session_store, init_session_stor
 from app.api.v1.routes.assistant import router as assist_router
 from app.api.v1.routes.auth_endpoints import router as auth_router
 from app.api.v1.routes.documents_endpoints import router as docs_router
-from app.api.v1.routes.voice_endpoints import router as voice_router        
-from app.services.Curim.voice_rag_service import get_rag_engine              # ← CAMBIADO
+from app.api.v1.routes.voice_endpoints import router as voice_router
+from app.services.Curim.voice_rag_service import get_rag_engine
 from app.core.config import settings
 from app.core.init_roles import init_roles
 from app.db.database import Base, SessionLocal, engine
@@ -58,7 +59,7 @@ except ValueError as e:
     print("📝 Por favor, agrega tu GEMINI_API_KEY en el archivo .env\n")
 
 # ─────────────────────────────────────────────
-# CORS
+# CORS — orígenes permitidos desde .env
 # ─────────────────────────────────────────────
 ALLOWED_ORIGINS = [
     origin.strip()
@@ -68,7 +69,6 @@ ALLOWED_ORIGINS = [
 # ─────────────────────────────────────────────
 # Base de datos
 # ─────────────────────────────────────────────
-
 
 def ensure_database() -> None:
     """
@@ -93,10 +93,11 @@ async def lifespan(app: FastAPI):
     Ciclo de vida de la aplicación.
 
     Startup:
-      1. Base de datos (recrear en dev, verificar en prod)
+      1. Base de datos
       2. SessionStore (Redis en prod, in-memory en dev)
       3. ConnectionManager
       4. VoiceRAGEngine (Gemini)
+      5. Scheduler de Resumen Semanal
 
     Shutdown:
       - Notificar clientes activos
@@ -123,7 +124,7 @@ async def lifespan(app: FastAPI):
 
     # 4. VoiceRAGEngine
     try:
-        engine_instance = get_rag_engine()                          # ← CAMBIADO
+        engine_instance = get_rag_engine()
         if engine_instance and engine_instance.is_ready:
             logger.info("VoiceRAGEngine listo")
         else:
@@ -188,14 +189,34 @@ app = FastAPI(
 
 # ─────────────────────────────────────────────
 # Middleware
+#
+# ORDEN IMPORTANTE: FastAPI aplica middlewares en orden INVERSO al que
+# se agregan. El último en agregarse es el primero en ejecutarse.
+#
+# Orden de ejecución deseado (request entrante):
+#   1. SessionMiddleware  → lee/escribe cookie de sesión OAuth
+#   2. CORSMiddleware     → valida origen y agrega headers CORS
+#
+# Por eso se agrega primero CORSMiddleware y luego SessionMiddleware.
 # ─────────────────────────────────────────────
 
+# Se agrega primero → se ejecuta de segundo
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=True,      # Requerido para enviar cookies cross-origin
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Se agrega de último → se ejecuta de primero (intercepta la cookie antes que todo)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie="curim_session",
+    same_site="lax",             # Permite cookies en redirects OAuth (cross-site GET)
+    https_only=False,            # False en desarrollo local (HTTP). Cambiar a True en producción
+    max_age=300,                 # 5 minutos: suficiente para completar el flujo OAuth
 )
 
 # ─────────────────────────────────────────────

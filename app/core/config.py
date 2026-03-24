@@ -21,6 +21,9 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    # ── Entorno ──────────────────────────────────────────────────────────────────
+    DEBUG: bool = True  # Cambiar a False en producción
+
     # ── Email ──────────────────────────────────────────────────────────────────
     RESEND_API_KEY: Optional[str] = None
     FROM_EMAIL: Optional[str] = None

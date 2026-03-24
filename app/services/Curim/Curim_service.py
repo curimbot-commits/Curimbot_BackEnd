@@ -28,7 +28,7 @@ from app.models.models import (
     User, Document, CurimConversation, CurimMessage, 
     CurimDocumentIndex
 )
-from app.services.Curim.rag_engine import VoiceRAGEngine as RAGEngine
+from app.services.Curim.voice_rag_service import get_rag_engine
 from app.services.Curim.cache_manager import CacheManager
 from app.services.Curim.semantic_cache import SemanticCache
 from app.services.Curim.document_processor import DocumentProcessor
@@ -81,9 +81,13 @@ class CurimService:
         El umbral de similitud del caché semántico es 0.85
         (85% similar para reutilizar respuesta).
         """
-        self.rag_engine = RAGEngine()
+        self.rag_engine = get_rag_engine()
         self.cache_manager = CacheManager()
-        self.semantic_cache = SemanticCache(similarity_threshold=0.85)
+        # Compartir el modelo de embeddings para ahorrar memoria
+        self.semantic_cache = SemanticCache(
+            similarity_threshold=0.85, 
+            embedding_model=self.rag_engine.embeddings
+        )
         self.document_processor = DocumentProcessor()
         
     def ask_question(

@@ -24,7 +24,7 @@ Integración con arquitectura existente:
 import logging
 import httpx
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast, Any
 from sqlalchemy.orm import Session
 
 from app.models.models import User, Role
@@ -112,7 +112,7 @@ class OAuthService:
         code: str,
         redirect_uri: str,
         db: Session
-    ) -> str:
+    ) -> Tuple[str, str]:
         """
         Procesa el callback de Google y retorna un JWT.
 
@@ -156,8 +156,8 @@ class OAuthService:
         user = OAuthService._find_or_create_user(
             provider="google",
             provider_id=str(provider_id),
-            email=email,
-            name=name,
+            email=str(email),
+            name=str(name),
             avatar=avatar,
             db=db
         )
@@ -187,6 +187,7 @@ class OAuthService:
                 raise OAuthError("Error al intercambiar código de Google")
 
             return response.json()
+        return {}
 
     @staticmethod
     async def _get_google_profile(access_token: str) -> dict:
@@ -203,6 +204,7 @@ class OAuthService:
                 raise OAuthError("Error al obtener perfil de Google")
 
             return response.json()
+        return {}
 
     # -------------------------------------------------------
     # GITHUB
@@ -236,7 +238,7 @@ class OAuthService:
         code: str,
         redirect_uri: str,
         db: Session
-    ) -> str:
+    ) -> Tuple[str, str]:
         """
         Procesa el callback de GitHub y retorna un JWT.
 
@@ -286,8 +288,8 @@ class OAuthService:
         user = OAuthService._find_or_create_user(
             provider="github",
             provider_id=str(provider_id),
-            email=email,
-            name=name,
+            email=str(email),
+            name=str(name),
             avatar=avatar,
             db=db
         )
@@ -336,6 +338,7 @@ class OAuthService:
                 raise OAuthError("Error al obtener perfil de GitHub")
 
             return response.json()
+        return {}
 
     @staticmethod
     async def _get_github_primary_email(access_token: str) -> Optional[str]:
@@ -556,53 +559,42 @@ class OAuthStateManager:
 
     El state es un token aleatorio que:
         1. Se genera antes de redirigir al provider
-        2. Se guarda en memoria (en producción usar Redis)
+        2. Se guarda en la sesión del usuario (cookie firmada)
         3. Se verifica cuando el provider hace callback
-
-    En producción reemplazar el dict en memoria por Redis con TTL.
-
-    Uso:
-        # Al iniciar el flujo
-        state = OAuthStateManager.generate()
-
-        # Al recibir callback
-        if not OAuthStateManager.verify(state):
-            raise HTTPException(400, "Estado inválido, posible CSRF")
     """
 
-    # En producción: usar Redis con TTL de 10 minutos
-    _states: dict = {}
-
     @classmethod
-    def generate(cls) -> str:
-        """Genera y almacena un token state aleatorio."""
+    def generate(cls, request) -> str:
+        """Genera y almacena un token state aleatorio en la sesión."""
         import secrets
         state = secrets.token_urlsafe(32)
-        cls._states[state] = datetime.now(timezone.utc)
-        cls._cleanup()
+        request.session["oauth_state"] = state
         return state
 
     @classmethod
-    def verify(cls, state: str) -> bool:
+    def verify(cls, request, state: str) -> bool:
         """
-        Verifica y consume un state (uso único).
+        Verifica y consume un state de la sesión.
 
         Returns:
-            bool: True si el state es válido
+            bool: True si el state coincide con el guardado
         """
-        if state in cls._states:
-            del cls._states[state]
+        stored_state = request.session.get("oauth_state")
+        if stored_state and stored_state == state:
+            # Limpiar el estado después de verificarlo (uso único)
+            del request.session["oauth_state"]
             return True
+        
+        # Mostrar el state completo para evitar errores de tipado con el linter en slicing
+        rec_display = f"{state}"
+        stored_display = f"{stored_state}" if stored_state else "None"
+        
+        logger.warning(
+            f"Verificación de state fallida. "
+            f"Recibido: {rec_display}, Almacenado: {stored_display}. "
+            f"Cookies recibidas: {request.cookies}"
+        )
         return False
-
-    @classmethod
-    def _cleanup(cls):
-        """Elimina states expirados (más de 10 minutos)."""
-        from datetime import timedelta
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-        expired = [s for s, t in cls._states.items() if t < cutoff]
-        for s in expired:
-            del cls._states[s]
 
 
 # =========================================================

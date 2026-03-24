@@ -928,6 +928,8 @@ def get_current_user(
             detail="Usuario no encontrado o desactivado",
             headers={"WWW-Authenticate": "Bearer"}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Unexpected error in get_current_user: {e}")
         raise HTTPException(

@@ -6,18 +6,29 @@ from typing import Optional, Dict
 import json
 import os
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class SemanticCache:
     """
     Caché basado en similitud semántica
     Permite reutilizar respuestas para preguntas similares
     """
     
-    def __init__(self, similarity_threshold: float = 0.85):
+    def __init__(self, similarity_threshold: float = 0.85, embedding_model=None):
         self.cache_file = "./storage/Curim_data/cache/semantic_cache.json"
         self.similarity_threshold = similarity_threshold
         
-        # Modelo para embeddings (ligero y rápido)
-        self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+        # Inyección de modelo para evitar doble carga en memoria
+        if embedding_model:
+            self.model = embedding_model
+            logger.info("SemanticCache: Usando modelo de embeddings inyectado")
+        else:
+            # Fallback a carga local si no se provee
+            logger.warning("SemanticCache: Cargando modelo localmente (posible redundancia)")
+            from sentence_transformers import SentenceTransformer
+            self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
         
         self.cache = self._load_cache()
     
@@ -42,7 +53,10 @@ class SemanticCache:
             return None
         
         # Generar embedding de la pregunta
-        question_embedding = self.model.encode(question)
+        if hasattr(self.model, 'encode'):
+            question_embedding = self.model.encode(question)
+        else:
+            question_embedding = self.model.embed_query(question)
         
         # Buscar pregunta más similar del usuario
         best_match = None
@@ -77,8 +91,11 @@ class SemanticCache:
     def set(self, user_id: int, question: str, answer: str, confidence: float, sources: list, sources_info: list = []):
         """Guardar respuesta con embedding"""
         
-        # Generar embedding
-        embedding = self.model.encode(question).tolist()
+        # Generar embedding - Soporta tanto SentenceTransformer como LangChain Embeddings
+        if hasattr(self.model, 'encode'):
+            embedding = self.model.encode(question).tolist()
+        else:
+            embedding = self.model.embed_query(question)
         
         # Generar key única
         import hashlib
