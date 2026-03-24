@@ -209,6 +209,10 @@ async def set_oauth_cookies(
         user = AuthService.get_user_from_token(tokens.token, db)
         
         is_secure = not settings.DEBUG
+        # En producción (HTTPS) usamos SameSite=none para permitir cookies
+        # en peticiones XHR cross-origin (curimbot.com → api.curimbot.com).
+        # En local (HTTP) usamos SameSite=lax porque todo corre en localhost.
+        samesite = "none" if is_secure else "lax"
         response = JSONResponse(content={
             "id": user.id,
             "name": user.name,
@@ -224,7 +228,7 @@ async def set_oauth_cookies(
             value=tokens.token,
             httponly=True,
             secure=is_secure,
-            samesite="lax",
+            samesite=samesite,
             max_age=3600 * 24
         )
         response.set_cookie(
@@ -232,7 +236,7 @@ async def set_oauth_cookies(
             value=tokens.refresh,
             httponly=True,
             secure=is_secure,
-            samesite="lax",
+            samesite=samesite,
             path="/auth/refresh",
             max_age=3600 * 24 * 7
         )
