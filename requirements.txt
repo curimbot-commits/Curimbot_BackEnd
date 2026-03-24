@@ -1,29 +1,37 @@
 fastapi
 uvicorn
 
-# IA / NLP
+# Core
+pydantic
+python-dotenv
+
+# DB
+SQLAlchemy
+PyMySQL
+
+# Auth / Sessions
+itsdangerous
+python-multipart
+email-validator
+
+# IA
 transformers>=4.41.0,<5.0.0
 sentence-transformers
 tokenizers>=0.22.0,<0.24.0
 torch
 
-# LangChain ecosystem
+# LangChain
 langchain
 langchain-community
 langchain-core
 langchain-huggingface
 chromadb
 
-# DB
-SQLAlchemy
-PyMySQL
-
 # Utilidades
-pydantic
-python-dotenv
 requests
+numpy
 
-# Archivos / docs
+# Archivos
 PyPDF2
 python-docx
 
@@ -31,6 +39,3 @@ python-docx
 sounddevice
 soundfile
 ffmpeg-python
-
-# Otros
-numpy
