@@ -38,6 +38,7 @@ class CurimMessage(Base):
     
     confidence = Column(Integer, nullable=True)
     sources = Column(Text, nullable=True)
+    sources_info = Column(Text, nullable=True) # Almacena JSON con nombres de archivos y puntuaciones
     from_cache = Column(Boolean, default=False, nullable=False)
     processing_time_ms = Column(Integer, nullable=True)
     

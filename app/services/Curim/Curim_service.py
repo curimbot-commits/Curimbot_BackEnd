@@ -172,6 +172,7 @@ class CurimService:
                     db, user.id, question, cached_response["answer"],
                     confidence=cached_response.get("confidence", 1.0),
                     sources=cached_response.get("sources", []),
+                    sources_info=cached_response.get("sources_info", []),
                     from_cache=True,
                     processing_time_ms=0,
                     conversation_id=conversation_id
@@ -195,6 +196,7 @@ class CurimService:
                     db, user.id, question, semantic_response["answer"],
                     confidence=semantic_response.get("confidence", 1.0),
                     sources=semantic_response.get("sources", []),
+                    sources_info=semantic_response.get("sources_info", []),
                     from_cache=True,
                     processing_time_ms=0,
                     conversation_id=conversation_id
@@ -249,6 +251,7 @@ class CurimService:
             db, user.id, question, answer,
             confidence=confidence,
             sources=source_ids,
+            sources_info=sources_info,
             from_cache=False,
             processing_time_ms=processing_time,
             conversation_id=conversation_id
@@ -300,6 +303,7 @@ class CurimService:
         answer: str,
         confidence: float,
         sources: List[int],
+        sources_info: List[dict],
         from_cache: bool,
         processing_time_ms: float,
         conversation_id: Optional[int] = None
@@ -362,6 +366,7 @@ class CurimService:
             content=answer,
             confidence=int(confidence * 100),
             sources=json.dumps(sources),
+            sources_info=json.dumps(sources_info),
             from_cache=from_cache,
             processing_time_ms=int(processing_time_ms),
             created_at=datetime.now(timezone.utc)
@@ -417,6 +422,7 @@ class CurimService:
                     "content": msg.content,
                     "timestamp": msg.created_at.isoformat(),
                     "sources": json.loads(msg.sources) if msg.sources else [],
+                    "sources_info": json.loads(msg.sources_info) if msg.sources_info else [],
                     "confidence": msg.confidence / 100.0 if msg.confidence else None,
                     "from_cache": msg.from_cache
                 }

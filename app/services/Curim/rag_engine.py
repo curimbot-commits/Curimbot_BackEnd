@@ -63,8 +63,8 @@ class VoiceRAGEngine:
                 raise ValueError("GEMINI_API_KEY no configurada en .env")
 
             self.vector_db_path = "./storage/Curim_data/chroma_db"
-            self.chunk_size = 500
-            self.chunk_overlap = 100
+            self.chunk_size = 1500
+            self.chunk_overlap = 300
 
             # === CONFIGURACIÓN DE AUDIO ===
             self.sample_rate = 16000  # Para entrada de voz
@@ -309,51 +309,45 @@ Responde de forma natural y conversacional basándote en el contexto proporciona
         try:
             # 1. RETRIEVAL DE CONTEXTO
             logger.info(f"🔍 Buscando información para: {question}")
-            context = self._retrieve_context_sync(question, documents)
+            context, retrieved_docs = self._retrieve_context_sync(question, documents)
             
-            if not context or context == "No hay documentos disponibles.":
+            if not context or "No se encontró información relevante" in context:
                 return (
-                    "No tengo documentos disponibles para responder tu pregunta.",
+                    "Lo siento, no tengo acceso a documentos de referencia en este momento para responder tu pregunta técnica. Por favor, asegúrate de haber cargado los archivos necesarios.",
                     0.0,
                     [],
                     []
                 )
             
             # 2. GENERAR RESPUESTA EN TEXTO
-            # Detección de idioma más robusta (Punto 1 Refinamiento Final)
-            eng_indicators = [
-                'what', 'how', 'is', 'the', 'can', 'you', 'my', 'summary', 'about', 
-                'who', 'where', 'when', 'which', 'tell', 'me', 'describe', 'explain',
-                'this', 'that', 'these', 'those', 'please', 'help', 'search'
-            ]
-            # También detectamos por palabras muy comunes en inglés
+            # Detección de idioma más robusta
             question_lower = question.lower()
-            likely_english = any(f" {word} " in f" {question_lower} " for word in eng_indicators) or \
-                             any(question_lower.startswith(word + " ") for word in eng_indicators)
+            eng_indicators = ['what', 'how', 'is', 'the', 'can', 'you', 'my', 'summary', 'about', 'who', 'where', 'when', 'which']
+            likely_english = any(word in question_lower.split() for word in eng_indicators)
             
             target_lang = "ENGLISH" if likely_english else "SPANISH"
 
             system_instruction = (
-                "Eres ATHENIA, un asistente experto en análisis de documentos. "
-                "Tu objetivo es responder preguntas basándote ÚNICAMENTE en el contexto proporcionado. "
-                f"REGLA CRÍTICA: Debes responder OBLIGATORIAMENTE en idioma {target_lang}. "
-                f"Si el usuario pregunta en Inglés, tu respuesta DEBE ser 100% en Inglés. "
-                "No mezcles idiomas. No traduzcas conceptos clave si no es necesario."
+                "Eres ATHENIA, una inteligencia artificial experta en análisis de documentos de Curiman Brokers Group. "
+                "Tu objetivo es proporcionar respuestas precisas, profesionales y altamente estructuradas basadas ÚNICAMENTE en el contexto proporcionado. "
+                "REGLAS CRÍTICAS:\n"
+                "1. Si la información no está en el contexto, di honestamente que no lo sabes. NUNCA inventes información.\n"
+                f"2. Responde OBLIGATORIAMENTE en {target_lang}.\n"
+                "3. Estructura tu respuesta con: Un resumen ejecutivo inicial, seguido de detalles específicos (usando bullets) y mención de la fuente.\n"
+                "4. Mantén un tono formal y experto en seguros y finanzas."
             )
             
             prompt = f"""INSTRUCCIÓN DE SISTEMA: {system_instruction}
 
-Basado en el siguiente contexto, responde la pregunta de forma DETALLADA y COMPLETA.
-Usa párrafos cortos y puntos de lista claros con ESPACIADO (doble salto de línea) entre secciones para mejorar la legibilidad.
-No resumas innecesariamente — se espera una respuesta extensa y bien desarrollada.
+Basado en el siguiente contexto de documentos internos, responde de forma estructurada y detallada.
 
 CONTEXTO:
 {context}
 
-PREGUNTA (Idioma detectado: {target_lang}):
+PREGUNTA ({target_lang}):
 {question}
 
-RESPUESTA DETALLADA EN {target_lang}:"""
+RESPUESTA ESTRUCTURADA EN {target_lang}:"""
             
             # Usar text_model (gemini-1.5-flash)
             response = self.text_model.generate_content(
@@ -367,18 +361,22 @@ RESPUESTA DETALLADA EN {target_lang}:"""
             
             answer = response.text if response.text else "Lo siento, no pude generar una respuesta."
             
-            # 3. OBTENER IDs DE FUENTES
-            source_ids = list(set([doc.id for doc in documents if hasattr(doc, 'id')]))
-            
-            # 4. CREAR INFORMACIÓN DETALLADA DE FUENTES
+            # 3. OBTENER INFORMACIÓN REAL DE FUENTES DESDE CHUNKS RECUPERADOS
+            source_ids = []
             sources_info = []
-            for doc in documents[:3]:
-                sources_info.append({
-                    "document_id": doc.id if hasattr(doc, 'id') else 0,
-                    "filename": doc.filename if hasattr(doc, 'filename') else "Desconocido",
-                    "snippet": context[:200] + "...",
-                    "relevance_score": 0.8
-                })
+            seen_docs = set()
+            
+            for doc in retrieved_docs:
+                did = doc.metadata.get("document_id")
+                if did and did not in seen_docs:
+                    source_ids.append(did)
+                    sources_info.append({
+                        "document_id": did,
+                        "filename": doc.metadata.get("filename", "Documento"),
+                        "snippet": doc.page_content[:150] + "...",
+                        "relevance_score": 0.9 # Placeholder as we already filtered
+                    })
+                    seen_docs.add(did)
             
             # 5. CALCULAR CONFIANZA
             confidence = self._calculate_confidence(context, question)
@@ -441,7 +439,7 @@ RESPUESTA DETALLADA EN {target_lang}:"""
             
             # 3. RETRIEVAL
             logger.info("🔍 Buscando información relevante...")
-            context = self._retrieve_context_sync(transcribed_question, documents)
+            context, _ = self._retrieve_context_sync(transcribed_question, documents)
             
             # 4. GENERAR RESPUESTA EN AUDIO
             logger.info("🎯 Generando respuesta por voz...")
@@ -508,27 +506,39 @@ REGLA CRÍTICA DE IDIOMA:
 
     # === MÉTODOS DE RETRIEVAL ===
 
-    def _retrieve_context_sync(self, question: str, documents: List) -> str:
-        """Versión síncrona de retrieve_context"""
+    def _retrieve_context_sync(self, question: str, documents: List) -> Tuple[str, List[LangchainDocument]]:
+        """
+        Versión síncrona de retrieve_context que devuelve el texto y los documentos (con metadatos).
+        """
         try:
             if not documents:
-                return "No hay documentos disponibles."
+                return "No hay documentos disponibles.", []
             
             doc_ids = [doc.id for doc in documents]
             
+            # Búsqueda con score
             retrieved = self.vectorstore.similarity_search_with_score(
                 query=question,
-                k=8,  # Reducido de 12 para optimizar velocidad
+                k=15, # k aumentado para mayor cobertura
                 filter={"document_id": {"$in": doc_ids}}
             )
             
             if not retrieved:
-                return "No se encontró información relevante."
+                return "No se encontró información relevante en los documentos.", []
             
-            selected_docs = [doc for doc, score in retrieved[:5] if score < 1.5]
+            # Filtrar por score (similitud coseno en HNSW de Chroma)
+            # Scores más bajos son mejores (distancia). 
+            # 0.8 es un buen umbral para MiniLM-L12-v2 en español/multilingue
+            selected_docs = []
+            for doc, score in retrieved:
+                if score < 1.0: # Umbral más estricto que el anterior
+                    selected_docs.append(doc)
             
             if not selected_docs:
-                return "No se encontraron chunks con suficiente relevancia."
+                return "No se encontraron fragmentos con suficiente relevancia para responder.", []
+            
+            # Tomar máximo 6 chunks para no saturar el contexto pero dar detalle
+            selected_docs = selected_docs[:6]
             
             context_parts = []
             for doc in selected_docs:
@@ -537,21 +547,17 @@ REGLA CRÍTICA DE IDIOMA:
             context = "\n\n".join(context_parts)
             logger.info(f"Contexto recuperado: {len(context)} caracteres de {len(selected_docs)} chunks")
             
-            # Guardar en caché
-            doc_ids_key = str(sorted(doc_ids))
-            self.context_cache[doc_ids_key] = context
-            
-            return context
+            return context, selected_docs
             
         except Exception as e:
             logger.error(f"Error en retrieval: {e}")
-            return ""
+            return "", []
 
     async def _retrieve_context(
         self, 
         question: str, 
         documents: List
-    ) -> str:
+    ) -> Tuple[str, List[LangchainDocument]]:
         """Versión asíncrona (wrapper)"""
         return await asyncio.to_thread(
             self._retrieve_context_sync,

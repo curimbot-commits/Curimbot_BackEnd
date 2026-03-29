@@ -35,11 +35,19 @@ class DocumentSyncRequest(BaseModel):
 # RESPONSE SCHEMAS
 # ===========================
 
+class CurimSourceInfo(BaseModel):
+    """Información detallada de fuente"""
+    document_id: int
+    filename: str
+    snippet: Optional[str] = None
+    relevance_score: Optional[float] = None
+
 class CurimResponse(BaseModel):
     """Response de Curim"""
     answer: str = Field(..., description="Respuesta generada")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Nivel de confianza (0-1)")
     sources: List[int] = Field(default=[], description="IDs de documentos usados como fuente")
+    sources_info: List[CurimSourceInfo] = Field(default=[], description="Información detallada de fuentes")
     from_cache: bool = Field(..., description="Si la respuesta viene del caché")
     processing_time_ms: float = Field(..., description="Tiempo de procesamiento en ms")
     conversation_id: int = Field(..., description="ID de la conversación")
@@ -50,6 +58,9 @@ class CurimResponse(BaseModel):
                 "answer": "AudacIA es un centro especializado en inteligencia artificial...",
                 "confidence": 0.95,
                 "sources": [1, 3, 5],
+                "sources_info": [
+                    {"document_id": 1, "filename": "Doc1.pdf", "relevance_score": 0.9}
+                ],
                 "from_cache": False,
                 "processing_time_ms": 847.3,
                 "conversation_id": 42
@@ -63,6 +74,7 @@ class ConversationMessage(BaseModel):
     content: str
     timestamp: datetime
     sources: List[int] = Field(default=[])
+    sources_info: List[CurimSourceInfo] = Field(default=[])
 
 class ConversationHistory(BaseModel):
     """Historial de conversación"""
