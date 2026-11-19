@@ -70,11 +70,19 @@ class DocumentService:
             raise
 
     @staticmethod
-    def _validate_user_access(doc: Document, user) -> None:
-        """Validate if user has access to document"""
+    def _validate_user_access(doc: Document, user, allow_public: bool = False) -> None:
+        """
+        Validate if user has access to document.
+
+        allow_public=True (lectura: metadata/descarga): cualquier usuario puede
+        acceder a documentos públicos (is_public=1, los que sube un admin).
+        Las operaciones de escritura (borrar) siguen limitadas a propietario o admin.
+        """
         if not doc:
             raise DocumentNotFoundError("Documento no encontrado")
         if user.is_admin:
+            return
+        if allow_public and doc.is_public == 1:
             return
         if doc.uploaded_by != user.id:
             raise DocumentAccessDeniedError("No tiene permisos para acceder a este documento")
@@ -188,7 +196,7 @@ class DocumentService:
                 raise HTTPException(status_code=400, detail="ID de documento inválido")
 
             doc = get_document_by_id(db, doc_id)
-            DocumentService._validate_user_access(doc, user)
+            DocumentService._validate_user_access(doc, user, allow_public=True)
 
             # Actualizar última vista y contador (SIN activity log)
             try:
@@ -222,7 +230,7 @@ class DocumentService:
                 raise HTTPException(status_code=400, detail="ID de documento inválido")
 
             doc = get_document_by_id(db, doc_id)
-            DocumentService._validate_user_access(doc, user)
+            DocumentService._validate_user_access(doc, user, allow_public=True)
 
             if not doc.blob_enc:
                 raise HTTPException(status_code=404, detail="Contenido del documento no encontrado")
