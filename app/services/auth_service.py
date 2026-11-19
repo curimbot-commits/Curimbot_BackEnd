@@ -309,6 +309,12 @@ class AuthService:
         """
         try:
             payload = security_service.decode_token(token)
+
+            # Solo los access tokens autentican peticiones; un refresh token
+            # (30 días) no debe servir como credencial de acceso.
+            if payload.get("type") != "access":
+                raise TokenExpiredError("Tipo de token inválido")
+
             jti = payload.get("jti")
 
             if AuthService.is_token_blacklisted(jti, db):
@@ -350,6 +356,11 @@ class AuthService:
 
         except JWTError as exc:
             logger.warning("Token inválido: %s", exc)
+            raise TokenExpiredError("Token inválido o expirado")
+        except HTTPException:
+            # security_service.decode_token señala firma inválida o expiración
+            # con HTTPException 401; se traduce para que llegue como 401 y no
+            # como 500 a través de get_user_from_token.
             raise TokenExpiredError("Token inválido o expirado")
         except TokenBlacklistedError:
             raise
@@ -425,6 +436,89 @@ class AuthService:
     # ========================================
 
     @staticmethod
+    def _ensure_not_locked(user: User, db: Session) -> None:
+        """
+        Lanza `AccountLockedError` si la cuenta está bloqueada temporalmente.
+        Si el bloqueo ya expiró, reinicia el contador de intentos fallidos.
+
+        MySQL devuelve `locked_until` sin zona horaria; se interpreta como UTC.
+        """
+        if not user.locked_until:
+            return
+
+        locked_until = user.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        if locked_until > now:
+            remaining = locked_until - now
+            raise AccountLockedError(
+                f"Cuenta bloqueada temporalmente. Intente nuevamente en "
+                f"{int(remaining.total_seconds() / 60)} minutos."
+            )
+
+        user.failed_attempts = 0
+        user.locked_until = None
+        db.commit()
+
+    @staticmethod
+    def authenticate_with_2fa(
+        email: str,
+        password: str,
+        code: str,
+        db: Session,
+        ip_address: str,
+        user_agent: str,
+    ) -> User:
+        """
+        Valida credenciales y segundo factor aplicando las mismas reglas que
+        `login_user`: bloqueo temporal, cuenta activa y registro de intentos
+        fallidos (tanto por contraseña como por código TOTP/respaldo).
+
+        Returns:
+            Usuario autenticado, con el contador de intentos reiniciado.
+
+        Raises:
+            InvalidCredentialsError: Credenciales o código inválidos.
+            AccountLockedError: Cuenta bloqueada o desactivada.
+        """
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise InvalidCredentialsError("Credenciales inválidas")
+
+        AuthService._ensure_not_locked(user, db)
+
+        if not security_service.verify_password(password, user.password_hash):
+            AuthService._record_failed_attempt(user, ip_address, user_agent, db)
+            raise InvalidCredentialsError("Credenciales inválidas")
+
+        if not user.is_active:
+            raise AccountLockedError("Cuenta desactivada")
+
+        if not user.two_factor_enabled or not user.two_factor_secret:
+            raise InvalidCredentialsError("Código inválido")
+
+        code_ok = TwoFactorAuthService.verify_totp_code(
+            user.two_factor_secret, code
+        ) or TwoFactorAuthService.verify_backup_code(user, code, db)
+        if not code_ok:
+            AuthService._record_failed_attempt(user, ip_address, user_agent, db)
+            raise InvalidCredentialsError("Código inválido")
+
+        user.failed_attempts = 0
+        user.locked_until = None
+        db.commit()
+        AuthService._log_login_attempt(
+            email=user.email,
+            success=True,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db,
+        )
+        return user
+
+    @staticmethod
     def login_user(
         email: str,
         password: str,
@@ -463,17 +557,7 @@ class AuthService:
         if not user:
             raise InvalidCredentialsError("Credenciales inválidas")
 
-        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
-            remaining = user.locked_until - datetime.now(timezone.utc)
-            raise AccountLockedError(
-                f"Cuenta bloqueada temporalmente. Intente nuevamente en "
-                f"{int(remaining.total_seconds() / 60)} minutos."
-            )
-
-        if user.locked_until and user.locked_until <= datetime.now(timezone.utc):
-            user.failed_attempts = 0
-            user.locked_until = None
-            db.commit()
+        AuthService._ensure_not_locked(user, db)
 
         if not security_service.verify_password(password, user.password_hash):
             AuthService._record_failed_attempt(

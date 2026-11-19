@@ -465,29 +465,28 @@ def login_with_2fa(
         HTTPException 500: Error interno durante el procesamiento.
     """
     try:
-        user = (
-            db.query(User)
-            .filter(User.email == form_data.username)
-            .first()
+        ip_address, user_agent = (
+            get_client_info(request) if request else ("unknown", "unknown")
         )
-        if not user or not verify_password(
-            form_data.password, user.password_hash
-        ):
+        try:
+            user = AuthService.authenticate_with_2fa(
+                email=form_data.username,
+                password=form_data.password,
+                code=totp_code,
+                db=db,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        except InvalidCredentialsError as exc:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciales inválidas",
+                detail=str(exc),
             )
-
-        if not TwoFactorAuthService.verify_totp_code(
-            user.two_factor_secret, totp_code
-        ):
-            if not TwoFactorAuthService.verify_backup_code(
-                user, totp_code, db
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Código inválido",
-                )
+        except AccountLockedError:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail="Cuenta bloqueada",
+            )
 
         token_data = {
             "sub": str(user.id),
@@ -497,9 +496,6 @@ def login_with_2fa(
         access_token = security_service.create_access_token(token_data)
         refresh_token = security_service.create_refresh_token(token_data)
 
-        ip_address, user_agent = (
-            get_client_info(request) if request else ("unknown", "unknown")
-        )
         from app.services.session_service import SessionService
 
         SessionService.create_session(
