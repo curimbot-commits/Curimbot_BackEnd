@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.models import User, PasswordResetToken
-from app.schemas.auth_schemas import get_password_hash
+from app.core.security import get_password_hash
 from app.services.notification_service import NotificationService
 from app.enums.enums import NotificationType
 

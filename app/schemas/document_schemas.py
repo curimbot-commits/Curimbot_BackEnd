@@ -15,6 +15,7 @@ class DocumentCreate(BaseModel):
     blob_enc: Optional[bytes] = Field(default=None, description="Contenido binario (encriptado o no)")
     uploaded_by: int = Field(..., gt=0, description="ID del usuario que sube el documento")
     is_public: int = Field(default=0, description="0: privado, 1: público (compartido)")
+    content_hash: Optional[str] = Field(default=None, description="SHA-256 del texto extraído normalizado")
 
 class DocumentUpdate(BaseModel):
     filename: Optional[str] = None

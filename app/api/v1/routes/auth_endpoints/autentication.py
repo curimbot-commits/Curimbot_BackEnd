@@ -1,7 +1,13 @@
 """
 Módulo de autenticación y seguridad de usuarios.
 
-Endpoints de login/logout, registro, renovación de tokens, 2FA y alertas de login.
+Proporciona los endpoints de autenticación de la API: inicio y cierre de
+sesión, registro de usuarios, renovación de tokens, autenticación de dos
+factores y gestión de alertas de inicio de sesión.
+
+Las credenciales se transmiten mediante cookies HttpOnly configuradas a
+través de `settings.COOKIE_*`, permitiendo despliegues consistentes entre
+entornos de desarrollo (HTTP) y producción (HTTPS).
 """
 
 from fastapi.responses import JSONResponse
@@ -11,28 +17,54 @@ import logging
 from datetime import datetime
 from typing import List
 from .....schemas.auth_schemas import (
-    ActiveSessionsResponse, BackupCodesResponse, RefreshTokenRequest,
-    ResetPasswordRequest, Token, TwoFactorConfirmRequest, TwoFactorDisableRequest,
-    TwoFactorSetupResponse, TwoFactorVerifyRequest
+    ActiveSessionsResponse,
+    BackupCodesResponse,
+    RefreshTokenRequest,
+    ResetPasswordRequest,
+    Token,
+    TwoFactorConfirmRequest,
+    TwoFactorDisableRequest,
+    TwoFactorSetupResponse,
+    TwoFactorVerifyRequest,
 )
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status, Body
+from fastapi import (
+    APIRouter,
+    Depends,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    status,
+    Body,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.enums.enums import NotificationType
 from app.models.models import User, LoginAlert
 from app.schemas.user_schemas import UserCreate, UserInfoResponse
 from app.services.auth_service import (
-    AccountLockedError, AuthService, InvalidCredentialsError,
-    TokenBlacklistedError, TokenExpiredError, TwoFactorAuthService, TwoFactorRequiredError,
-    UserAlreadyExistsError, UserNotFoundError, WeakPasswordError, get_client_info,
-    get_current_user, require_admin
+    AccountLockedError,
+    AuthService,
+    InvalidCredentialsError,
+    TokenBlacklistedError,
+    TokenExpiredError,
+    TwoFactorAuthService,
+    TwoFactorRequiredError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+    WeakPasswordError,
+    get_client_info,
+    get_current_user,
+    require_admin,
 )
 
 from app.services.login_alert_service import LoginAlertService
 from app.services.email_service import EmailService
 from app.services.notification_service import NotificationService
+from app.core.config import settings
 from app.core.config import RESEND_API_KEY, FROM_EMAIL
 
 
@@ -46,212 +78,362 @@ logger = logging.getLogger(__name__)
 
 
 # ========================================
+# HELPERS DE COOKIES
+# ========================================
+
+ACCESS_TOKEN_PATH = "/"
+REFRESH_TOKEN_PATH = "/auth"
+
+ACCESS_TOKEN_MAX_AGE = 60 * 60 * 24
+REFRESH_TOKEN_MAX_AGE = 60 * 60 * 24 * 7
+
+
+def _set_auth_cookies(
+    response: Response, access_token: str, refresh_token: str
+) -> None:
+    """
+    Establece las cookies HttpOnly de acceso y de refresco.
+
+    Los atributos `secure`, `samesite` y `domain` se obtienen de `settings`,
+    garantizando que el comportamiento sea el adecuado tanto en entornos de
+    desarrollo (HTTP) como en producción (HTTPS).
+
+    Args:
+        response: Respuesta sobre la cual se escribirán las cookies.
+        access_token: Token JWT de acceso.
+        refresh_token: Token JWT de refresco.
+    """
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        domain=settings.COOKIE_DOMAIN,
+        max_age=ACCESS_TOKEN_MAX_AGE,
+        path=ACCESS_TOKEN_PATH,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        domain=settings.COOKIE_DOMAIN,
+        max_age=REFRESH_TOKEN_MAX_AGE,
+        path=REFRESH_TOKEN_PATH,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    """
+    Elimina las cookies de autenticación.
+
+    `delete_cookie` debe recibir los mismos `path`, `domain` y `samesite` con
+    los que fue creada la cookie; de lo contrario el navegador no la elimina.
+
+    Args:
+        response: Respuesta sobre la cual se eliminarán las cookies.
+    """
+    response.delete_cookie(
+        key="access_token",
+        path=ACCESS_TOKEN_PATH,
+        domain=settings.COOKIE_DOMAIN,
+        samesite=settings.COOKIE_SAMESITE,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+    )
+    response.delete_cookie(
+        key="refresh_token",
+        path=REFRESH_TOKEN_PATH,
+        domain=settings.COOKIE_DOMAIN,
+        samesite=settings.COOKIE_SAMESITE,
+        secure=settings.COOKIE_SECURE,
+        httponly=True,
+    )
+
+
+# ========================================
 # ENDPOINTS DE AUTENTICACIÓN BÁSICA
 # ========================================
 
-@router.post("/login", response_model=Token, summary="Iniciar sesión")
+@router.post("/login", summary="Iniciar sesión")
 def login(
-    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     request: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Autentica usuario con email y contraseña, retorna y establece cookies HttpOnly.
-    Si el usuario tiene 2FA habilitado, retorna `requires_2fa: true`.
+    Autentica al usuario con correo y contraseña, y establece las cookies
+    HttpOnly correspondientes. Si la cuenta tiene habilitada la verificación
+    en dos pasos, retorna `requires_2fa: true` sin emitir tokens.
+
+    Args:
+        form_data: Formulario OAuth2 con `username` (correo) y `password`.
+        request: Solicitud HTTP entrante, utilizada para auditar IP y agente.
+        db: Sesión de base de datos.
+
+    Returns:
+        JSONResponse con los tokens de acceso y refresco, o la indicación de
+        que se requiere verificación en dos pasos.
 
     Raises:
         HTTPException 401: Credenciales inválidas.
-        HTTPException 423: Cuenta bloqueada por múltiples intentos fallidos.
+        HTTPException 423: Cuenta bloqueada por intentos fallidos.
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
-        ip_address, user_agent = get_client_info(request) if request else ("unknown", "unknown")
+        ip_address, user_agent = (
+            get_client_info(request) if request else ("unknown", "unknown")
+        )
 
         result = AuthService.login_user(
             form_data.username,
             form_data.password,
             db,
             ip_address,
-            user_agent
+            user_agent,
         )
 
         if isinstance(result, dict) and result.get("requires_2fa"):
             return JSONResponse(
-                status_code=200,
+                status_code=status.HTTP_200_OK,
                 content={
                     "requires_2fa": True,
-                    "message": "Verificación de dos factores requerida"
-                }
+                    "message": "Verificación de dos factores requerida",
+                },
             )
 
         access_token, refresh_token = result
-        
-        # Establecemos cookies HttpOnly
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
-        
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer"
-        }
+
+        json_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+            },
+        )
+        _set_auth_cookies(json_response, access_token, refresh_token)
+        return json_response
 
     except InvalidCredentialsError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales inválidas"
+            detail="Credenciales inválidas",
         )
     except AccountLockedError:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
-            detail="Cuenta bloqueada"
+            detail="Cuenta bloqueada",
         )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during login: {e}")
+    except Exception as exc:
+        logger.exception("Unexpected error during login: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor durante el login"
+            detail="Error interno del servidor durante el login",
         )
 
 
-@router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED, summary="Registrar nuevo usuario")
+@router.post(
+    "/signup",
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar nuevo usuario",
+)
 def signup(
     user_data: UserCreate,
-    response: Response,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Crea una nueva cuenta de usuario y retorna tokens de autenticación en cookies seguras.
-    La contraseña debe tener mayúsculas, minúsculas, números y caracteres especiales.
+    Crea una nueva cuenta de usuario y establece las cookies de autenticación.
+
+    La contraseña debe cumplir los requisitos de seguridad definidos por
+    `AuthService`: longitud mínima, mayúsculas, minúsculas, dígitos y
+    caracteres especiales.
+
+    Args:
+        user_data: Datos de creación del usuario.
+        request: Solicitud HTTP entrante.
+        db: Sesión de base de datos.
+
+    Returns:
+        JSONResponse con los tokens de acceso y refresco.
 
     Raises:
-        HTTPException 400: Contraseña no cumple requisitos de seguridad.
-        HTTPException 409: Usuario ya existe con ese email.
+        HTTPException 400: Contraseña que no cumple los requisitos.
+        HTTPException 409: Correo ya registrado.
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
         ip_address, _ = get_client_info(request)
-        access_token, refresh_token = AuthService.signup_user(user_data, db, ip_address)
-        
-        # Enviar notificación de bienvenida / seguridad
+        access_token, refresh_token = AuthService.signup_user(
+            user_data, db, ip_address
+        )
+
         try:
-            user = db.query(User).filter(User.email == user_data.email.lower()).first()
+            user = (
+                db.query(User)
+                .filter(User.email == user_data.email.lower())
+                .first()
+            )
             if user:
-                email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
+                email_service = EmailService(
+                    api_key=RESEND_API_KEY, from_email=FROM_EMAIL
+                )
                 notification_service = NotificationService(email_service)
                 notification_service.send_notification(
+                    db=db,
                     user_id=user.id,
-                    notification_type=NotificationType.SECURITY_ALERT,
-                    subject="🚀 ¡Bienvenido a Curim AI!",
-                    content=f"Hola {user.name}, tu cuenta ha sido creada exitosamente.",
-                    db=db
+                    event_type=NotificationType.WELCOME,
+                    data={},
                 )
-        except Exception as e:
-            logger.warning(f"Failed to send welcome notification: {e}")
+        except Exception as exc:
+            logger.warning("Failed to send welcome notification: %s", exc)
 
-        # Establecemos cookies HttpOnly
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        json_response = JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+            },
+        )
+        _set_auth_cookies(json_response, access_token, refresh_token)
+        return json_response
 
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer"
-        }
-
-    except UserAlreadyExistsError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except WeakPasswordError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except UserAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        )
+    except WeakPasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during signup: {e}")
+    except Exception as exc:
+        logger.exception("Unexpected error during signup: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor durante el registro"
+            detail="Error interno del servidor durante el registro",
         )
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK, summary="Cerrar sesión")
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Cerrar sesión",
+)
 def logout(
-    response: Response,
     request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Invalida el refresh token del usuario agregándolo a la blacklist.
+    Cierra la sesión del usuario.
 
-    Raises:
-        HTTPException 401: Token ya estaba invalidado.
+    - Blacklistea el refresh_token si está presente y es válido.
+    - SIEMPRE limpia las cookies, incluso si el access_token ya expiró
+      o si no hay sesión activa.
+    - Es idempotente: llamarlo sin sesión devuelve 200 igual.
     """
     try:
         refresh_token = request.cookies.get("refresh_token")
         if refresh_token:
-            was_blacklisted = AuthService.logout_user(refresh_token, db)
-            if not was_blacklisted:
-                logger.warning("Intentó hacer logout con un token ya invalidado.")
-        
-        response.delete_cookie(key="access_token", path="/", samesite="strict")
-        response.delete_cookie(key="refresh_token", path="/auth/refresh", samesite="strict")
+            try:
+                AuthService.logout_user(refresh_token, db)
+            except (TokenExpiredError, TokenBlacklistedError):
+                logger.info("Logout con refresh ya invalidado")
+            except Exception as exc:
+                # Nunca bloquear el logout por un error de blacklist
+                logger.warning(
+                    "Error blacklisteando refresh en logout: %s", exc
+                )
 
-        logger.info(f"User logged out: {current_user.email}")
-        return {"message": "Sesión cerrada correctamente"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during logout: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor durante el logout"
+        json_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Sesión cerrada correctamente"},
         )
+        _clear_auth_cookies(json_response)
+        return json_response
 
+    except Exception as exc:
+        logger.exception("Unexpected error during logout: %s", exc)
+        # Incluso si algo falla, intentamos limpiar cookies
+        err_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Sesión cerrada con advertencias"},
+        )
+        _clear_auth_cookies(err_response)
+        return err_response
 
-@router.post("/refresh", response_model=Token, summary="Renovar tokens")
+@router.post("/refresh", summary="Renovar tokens")
 def refresh_token(
-    response: Response,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Renueva tokens de acceso usando un refresh token válido.
-    El refresh token antiguo se invalida automáticamente.
+    Renueva los tokens de acceso y de refresco a partir de una cookie de
+    refresco válida. El token de refresco anterior se invalida.
+
+    Args:
+        request: Solicitud HTTP entrante.
+        db: Sesión de base de datos.
+
+    Returns:
+        JSONResponse con los nuevos tokens de acceso y refresco.
 
     Raises:
-        HTTPException 401: Token expirado o en lista negra.
+        HTTPException 401: Token ausente, expirado o en lista negra.
         HTTPException 404: Usuario no encontrado.
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
         refresh_token_cookie = request.cookies.get("refresh_token")
         if not refresh_token_cookie:
-            raise HTTPException(status_code=401, detail="Refresh token ausente")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token ausente",
+            )
 
-        access_token, new_refresh_token = AuthService.refresh_tokens(refresh_token_cookie, db)
-        
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
-        response.set_cookie(key="refresh_token", value=new_refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        access_token, new_refresh_token = AuthService.refresh_tokens(
+            refresh_token_cookie, db
+        )
 
-        return {
-            "access_token": access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer"
-        }
+        json_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "access_token": access_token,
+                "refresh_token": new_refresh_token,
+                "token_type": "bearer",
+            },
+        )
+        _set_auth_cookies(json_response, access_token, new_refresh_token)
+        return json_response
 
-    except (TokenExpiredError, TokenBlacklistedError) as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-    except UserNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except (TokenExpiredError, TokenBlacklistedError) as exc:
+        err_response = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": str(exc)},
+        )
+        _clear_auth_cookies(err_response)
+        return err_response
+
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during token refresh: {e}")
+    except Exception as exc:
+        logger.exception("Unexpected error during token refresh: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor durante la renovación de tokens"
+            detail=(
+                "Error interno del servidor durante la renovación de tokens"
+            ),
         )
 
 
@@ -259,41 +441,67 @@ def refresh_token(
 # ENDPOINTS DE AUTENTICACIÓN CON 2FA
 # ========================================
 
-@router.post("/login-with-2fa", response_model=Token)
+@router.post("/login-with-2fa", summary="Login con 2FA")
 def login_with_2fa(
     request: Request,
-    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     totp_code: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Inicia sesión con credenciales + código TOTP (o código de respaldo).
-    Envía alerta por email si el login proviene de un dispositivo o ubicación nueva.
+    Inicia sesión con credenciales y un código TOTP o código de respaldo.
+
+    Args:
+        request: Solicitud HTTP entrante.
+        form_data: Formulario OAuth2 con `username` y `password`.
+        totp_code: Código TOTP de seis dígitos o código de respaldo.
+        db: Sesión de base de datos.
+
+    Returns:
+        JSONResponse con los tokens de acceso y refresco.
 
     Raises:
-        HTTPException 401: Credenciales inválidas o código 2FA expirado/incorrecto.
+        HTTPException 401: Credenciales o código inválidos.
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
-        user = db.query(User).filter(User.email == form_data.username).first()
-        if not user or not verify_password(form_data.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        user = (
+            db.query(User)
+            .filter(User.email == form_data.username)
+            .first()
+        )
+        if not user or not verify_password(
+            form_data.password, user.password_hash
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas",
+            )
 
-        if not TwoFactorAuthService.verify_totp_code(user.two_factor_secret, totp_code):
-            if not TwoFactorAuthService.verify_backup_code(user, totp_code, db):
-                raise HTTPException(status_code=401, detail="Código inválido")
+        if not TwoFactorAuthService.verify_totp_code(
+            user.two_factor_secret, totp_code
+        ):
+            if not TwoFactorAuthService.verify_backup_code(
+                user, totp_code, db
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Código inválido",
+                )
 
         token_data = {
             "sub": str(user.id),
             "role": user.role.name,
-            "email": user.email
+            "email": user.email,
         }
         access_token = security_service.create_access_token(token_data)
         refresh_token = security_service.create_refresh_token(token_data)
 
-        # Crear sesión activa
-        ip_address, user_agent = get_client_info(request) if request else ("unknown", "unknown")
+        ip_address, user_agent = (
+            get_client_info(request) if request else ("unknown", "unknown")
+        )
         from app.services.session_service import SessionService
+
         SessionService.create_session(
             user_id=user.id,
             access_token=access_token,
@@ -301,33 +509,43 @@ def login_with_2fa(
             ip_address=ip_address,
             user_agent=user_agent,
             db=db,
-            is_current=True
+            is_current=True,
         )
 
         AuthService.update_last_login(user, db)
 
         try:
-            email_service = EmailService(api_key=RESEND_API_KEY, from_email=FROM_EMAIL)
+            email_service = EmailService(
+                api_key=RESEND_API_KEY, from_email=FROM_EMAIL
+            )
             notification_service = NotificationService(email_service)
             alert_service = LoginAlertService(notification_service)
             alert_service.record_login_and_check(user, request, db)
         except Exception as alert_error:
-            logger.warning(f"Failed to record login alert: {alert_error}")
+            logger.warning(
+                "Failed to record login alert: %s", alert_error
+            )
 
-        logger.info(f"Successful login for user: {user.email}")
-        
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="strict", max_age=3600*24)
-        response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict", path="/auth/refresh", max_age=3600*24*7)
+        logger.info("Successful login (2FA) for user: %s", user.email)
 
-        return Token(access_token=access_token, refresh_token=refresh_token)
+        json_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+            },
+        )
+        _set_auth_cookies(json_response, access_token, refresh_token)
+        return json_response
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Error during login: {e}")
+    except Exception as exc:
+        logger.exception("Error during login with 2FA: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al procesar inicio de sesión"
+            detail="Error al procesar inicio de sesión",
         )
 
 
@@ -339,20 +557,29 @@ def login_with_2fa(
 def get_recent_login_alerts(
     days: int = 30,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Retorna alertas de inicio de sesión recientes del usuario (nuevos dispositivos,
-    ubicaciones o actividad sospechosa).
+    Retorna las alertas de inicio de sesión recientes del usuario autenticado,
+    incluyendo dispositivos desconocidos, ubicaciones nuevas o actividad
+    potencialmente sospechosa.
 
     Args:
-        days: Número de días hacia atrás a consultar (default 30).
+        days: Número de días hacia atrás a consultar. Por defecto 30.
+        current_user: Usuario autenticado.
+        db: Sesión de base de datos.
+
+    Returns:
+        Diccionario con el total de alertas y la lista detallada.
+
+    Raises:
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
         alerts = LoginAlertService.get_recent_login_alerts(
             user=current_user,
             days=days,
-            db=db
+            db=db,
         )
         return {
             "total": len(alerts),
@@ -365,16 +592,20 @@ def get_recent_login_alerts(
                     "is_suspicious": alert.is_suspicious,
                     "is_new_device": alert.is_new_device,
                     "is_new_location": alert.is_new_location,
-                    "created_at": alert.created_at.isoformat()
+                    "created_at": alert.created_at.isoformat(),
                 }
                 for alert in alerts
-            ]
+            ],
         }
-    except Exception as e:
-        logger.exception(f"Error getting login alerts for user {current_user.id}: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Error getting login alerts for user %s: %s",
+            current_user.id,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al obtener alertas de login"
+            detail="Error al obtener alertas de login",
         )
 
 
@@ -382,24 +613,38 @@ def get_recent_login_alerts(
 def dismiss_login_alert(
     alert_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Descarta una alerta de inicio de sesión del usuario autenticado.
+    Descarta una alerta de inicio de sesión perteneciente al usuario
+    autenticado.
+
+    Args:
+        alert_id: Identificador de la alerta a descartar.
+        current_user: Usuario autenticado.
+        db: Sesión de base de datos.
+
+    Returns:
+        Diccionario confirmando la eliminación de la alerta.
 
     Raises:
-        HTTPException 404: Alerta no encontrada o no pertenece al usuario.
+        HTTPException 404: Alerta no encontrada o no perteneciente al usuario.
+        HTTPException 500: Error interno durante el procesamiento.
     """
     try:
-        alert = db.query(LoginAlert).filter(
-            LoginAlert.id == alert_id,
-            LoginAlert.user_id == current_user.id
-        ).first()
+        alert = (
+            db.query(LoginAlert)
+            .filter(
+                LoginAlert.id == alert_id,
+                LoginAlert.user_id == current_user.id,
+            )
+            .first()
+        )
 
         if not alert:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Alerta no encontrada"
+                detail="Alerta no encontrada",
             )
 
         db.delete(alert)
@@ -408,9 +653,11 @@ def dismiss_login_alert(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Error dismissing login alert {alert_id}: {e}")
+    except Exception as exc:
+        logger.exception(
+            "Error dismissing login alert %s: %s", alert_id, exc
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al descartar alerta"
+            detail="Error al descartar alerta",
         )

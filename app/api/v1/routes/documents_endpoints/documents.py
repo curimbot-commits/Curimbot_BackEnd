@@ -41,13 +41,12 @@ from app.services.handlers.validate_file import ValidateFileHandler
 from app.services.handlers.extract_text import ExtractTextHandler  
 from app.services.handlers.encrypt_file import EncryptFileHandler
 from app.services.handlers.save_to_db import SaveToDBHandler
-from app.services.handlers.log_activity import LogActivityHandler
 from cryptography.fernet import InvalidToken
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-# 🧩 Dependencia para obtener la sesión de la base de datos
+#  Dependencia para obtener la sesión de la base de datos
 def get_db():
     """
     Obtener sesión de base de datos para usar en endpoints.
@@ -71,7 +70,7 @@ def get_db():
 
 
 # =========================================================
-# 📄 Obtener lista de documentos con paginación mejorada
+#  Obtener lista de documentos con paginación mejorada
 # =========================================================
 
 @router.get("/", response_model=PaginatedDocumentsResponse)

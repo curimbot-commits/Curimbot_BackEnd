@@ -3,111 +3,105 @@
 # =========================================================
 from .auth_schemas import Token
 from typing import List, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+
 from app.schemas.auth_schemas import ChangePasswordRequest
-from app.enums.enums import FileType, LogAction
+from app.enums.enums import FileType, LogAction, AIChannel, AIInteractionStatus
 from app.schemas.common_schemas import AuthStatsResponse, LoginStatsResponse
 from app.schemas.user_schemas import SecurityAlert, UserCreate, UserInfoResponse
 
+
 # =========================================================
-# ESQUEMAS DE LOGS
+# ESQUEMAS DE LOGS DE SISTEMA (no cambian)
 # =========================================================
 
 class LogCreate(BaseModel):
-    """Esquema para crear un nuevo log"""
+    """Esquema para crear un nuevo log de sistema"""
     user_id: int
-    action: LogAction  
-    detail: str  
+    action: LogAction
+    detail: str
+
 
 class LogOut(BaseModel):
-    """Esquema para un log de salida con más detalles"""
+    """Esquema para un log de sistema"""
     id: int
     user_id: int
     action: LogAction
     detail: str
-    created_at: datetime  
+    created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)  
+    model_config = ConfigDict(from_attributes=True)
+
 
 # =========================================================
-# ESQUEMAS DE ACTIVIDADES RECIENTES
+# ESQUEMAS DE INTERACCIONES IA
 # =========================================================
-class ActivityLogOut(BaseModel):
-    """Esquema para registrar una actividad de un usuario"""
+
+class AIInteractionLogOut(BaseModel):
+    """Esquema de salida para una interacción con la IA"""
     id: int
-    action: str  
-    document_id: Optional[int] = None  
-    document_name: str  
-    document_type: Union[FileType, str]  
-    user_id: Optional[int] = None  
-    user_name: Optional[str] = None  
-    timestamp: datetime  
-    ip_address: Optional[str] = None  
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    question: str
+    answer: Optional[str] = None
+    channel: AIChannel
+    confidence: Optional[float] = None
+    status: AIInteractionStatus
+    error_message: Optional[str] = None
+    sources: Optional[List[int]] = None
+    sources_info: Optional[List[dict]] = None
+    processing_time_ms: Optional[int] = None
+    from_cache: bool = False
+    conversation_id: Optional[int] = None
+    timestamp: datetime
 
-    model_config = ConfigDict(from_attributes=True)  
+    model_config = ConfigDict(from_attributes=True)
 
-    @field_validator("document_type", mode="before")
+
+class AIInteractionFilters(BaseModel):
+    """Filtros para consultar interacciones IA"""
+    channel: Optional[AIChannel] = None
+    status: Optional[AIInteractionStatus] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    user_id: Optional[int] = None
+    from_cache: Optional[bool] = None
+
     @classmethod
-    def validate_file_type(cls, v):
-        """Valida si el tipo de documento es un valor válido de FileType o una cadena"""
+    def validate_channel(cls, v):
         if isinstance(v, str):
             try:
-                return FileType(v)  
+                return AIChannel(v)
             except ValueError:
-                raise ValueError(f"Tipo de archivo inválido: {v}")  
+                raise ValueError(f"Canal inválido: {v}")
         return v
 
-    @field_validator("document_type", mode="after")
-    @classmethod
-    def file_type_to_enum(cls, v):
-        """Convierte el tipo de documento a un enum si es una cadena"""
-        if isinstance(v, str):
-            try:
-                return FileType(v)  
-            except ValueError:
-                return v  
-        return v
 
-class ActivityLogFilters(BaseModel):
-    """Filtros para consultar logs de actividades"""
-    action: Optional[str] = Field(None, pattern="^(upload|download|view|delete)$")  
-    date_from: Optional[datetime] = None  
-    date_to: Optional[datetime] = None  
-    document_id: Optional[int] = None  
-    ip_address: Optional[str] = None  
+class PaginatedAIInteractionsResponse(BaseModel):
+    """Respuesta paginada de interacciones IA"""
+    items: List[AIInteractionLogOut]
+    total: int
+    skip: int
+    limit: int
+    has_next: bool
+    has_prev: bool
+    filters_applied: Optional[AIInteractionFilters] = None
 
-
-# =========================================================
-# RESPUESTAS PAGINADAS DE ACTIVIDADES
-# =========================================================
-
-class PaginatedActivitiesResponse(BaseModel):
-    """Respuesta paginada con los resultados de actividades"""
-    items: List[ActivityLogOut]  
-    total: int  
-    skip: int  
-    limit: int  
-    has_next: bool  
-    has_prev: bool  
-    filters_applied: Optional[ActivityLogFilters] = None  
-    
-    class Config:
-        from_attributes = True  
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =========================================================
 # CONFIGURACIÓN FINAL DE ESQUEMAS
 # =========================================================
 
-# Configuración adicional para asegurar la correcta serialización y documentación
 for schema_class in [
     UserCreate, UserInfoResponse, Token, ChangePasswordRequest,
     LoginStatsResponse, AuthStatsResponse, SecurityAlert
 ]:
     if hasattr(schema_class, 'Config'):
         schema_class.Config.json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None  
+            datetime: lambda v: v.isoformat() if v else None
         }
-        schema_class.Config.allow_population_by_field_name = True  
-        schema_class.Config.use_enum_values = True  
+        schema_class.Config.allow_population_by_field_name = True
+        schema_class.Config.use_enum_values = True

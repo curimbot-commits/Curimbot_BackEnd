@@ -1,43 +1,76 @@
-import logging
-from .base import DocumentHandler, DocumentContext
-from app.models.models import ActivityLog
+"""
+LogAIInteractionHandler — Registra interacciones del usuario con la IA.
 
-class LogActivityHandler(DocumentHandler):
-    """Handler para registrar actividades en la base de datos"""
-    
-    async def _handle(self, context: DocumentContext):
+Reemplaza al antiguo LogActivityHandler (que registraba uploads/downloads/views
+de documentos). Ahora se invoca desde:
+  - CurimService.ask_question()   → channel='text'
+  - voice_endpoints.py            → channel='voice'
+
+NO forma parte del chain de subida de documentos.
+"""
+
+import json
+import logging
+from typing import Optional, List
+
+from sqlalchemy.orm import Session
+
+from app.models.models import AIInteractionLog
+from app.enums.enums import AIChannel, AIInteractionStatus
+
+
+class LogAIInteractionHandler:
+    """Handler/servicio para registrar interacciones IA en la base de datos."""
+
+    @staticmethod
+    def log(
+        db: Session,
+        user_id: int,
+        question: str,
+        answer: Optional[str],
+        channel: AIChannel = AIChannel.text,
+        confidence: Optional[float] = None,
+        status: AIInteractionStatus = AIInteractionStatus.success,
+        error_message: Optional[str] = None,
+        sources: Optional[List[int]] = None,
+        sources_info: Optional[List[dict]] = None,
+        processing_time_ms: Optional[int] = None,
+        from_cache: bool = False,
+        conversation_id: Optional[int] = None,
+    ) -> Optional[AIInteractionLog]:
         """
-        Registra la actividad de subida de documento
+        Registra una interacción IA. No falla la operación principal si
+        el logging falla — captura la excepción y devuelve None.
         """
         try:
-            if not context.document:
-                logging.warning(f"[{context.correlation_id}] No se puede registrar actividad: documento no creado")
-                return
-            
-            # Obtener IP address del request si está disponible
-            ip_address = None
-            if hasattr(context, 'request') and context.request:
-                ip_address = getattr(context.request.client, 'host', None) if context.request.client else None
-            
-            activity = ActivityLog(
-                action="upload",
-                document_id=context.document.id,
-                user_id=context.user.id,
-                document_name=context.document.filename,
-                document_type=context.document.file_type,
-                ip_address=ip_address
+            interaction = AIInteractionLog(
+                user_id=user_id,
+                question=question,
+                answer=answer,
+                channel=channel,
+                confidence=confidence,
+                status=status,
+                error_message=error_message,
+                sources=json.dumps(sources) if sources is not None else None,
+                sources_info=json.dumps(sources_info) if sources_info is not None else None,
+                processing_time_ms=int(processing_time_ms) if processing_time_ms is not None else None,
+                from_cache=from_cache,
+                conversation_id=conversation_id,
             )
-            
-            context.db.add(activity)
-            context.db.commit()
-            
+            db.add(interaction)
+            db.commit()
+            db.refresh(interaction)
+
             logging.info(
-                f"[{context.correlation_id}] ✅ Actividad registrada: "
-                f"Usuario {context.user.email} subió {context.document.filename} "
-                f"(ID: {context.document.id})"
+                f"✅ Interacción IA registrada: user={user_id} "
+                f"channel={channel.value} status={status.value} id={interaction.id}"
             )
-            
+            return interaction
+
         except Exception as e:
-            logging.error(
-                f"[{context.correlation_id}]  Error registrando actividad: {e}"
-            )
+            logging.error(f"❌ Error registrando interacción IA: {e}", exc_info=True)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return None

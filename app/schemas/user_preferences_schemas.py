@@ -4,8 +4,9 @@ app/schemas/user_preferences_schemas.py
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from enum import Enum
+
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 
 
 class ThemeEnum(str, Enum):
@@ -27,7 +28,6 @@ class WeeklySummaryFormatEnum(str, Enum):
     EXCEL = "excel"
 
 
-
 # ========================================
 # NOTIFICATION PREFERENCES
 # ========================================
@@ -37,21 +37,28 @@ class NotificationPreferencesUpdate(BaseModel):
     email_notifications: Optional[bool] = None
     push_notifications: Optional[bool] = None
     weekly_summary: Optional[bool] = None
-    weekly_summary_format: Optional[WeeklySummaryFormatEnum] = Field(None, description="Formato del resumen semanal (pdf, excel)")
+    weekly_summary_format: Optional[WeeklySummaryFormatEnum] = Field(
+        None, description="Formato del resumen semanal (pdf, excel)"
+    )
     login_alerts: Optional[bool] = Field(None, description="Alertas de inicio de sesión")
-    security_alerts: Optional[bool] = Field(None, description="Alertas de seguridad y cambios de cuenta")
+    security_alerts: Optional[bool] = Field(
+        None, description="Alertas de seguridad y cambios de cuenta"
+    )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "email_notifications": True,
                 "push_notifications": False,
                 "weekly_summary": True,
                 "weekly_summary_format": "pdf",
                 "login_alerts": True,
-                "security_alerts": True
+                "security_alerts": True,
             }
-        }
+        },
+    )
+
 
 class InterfacePreferencesUpdate(BaseModel):
     """Actualización de preferencias de interfaz"""
@@ -60,18 +67,23 @@ class InterfacePreferencesUpdate(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class UserProfileUpdate(BaseModel):
     """Actualización de perfil de usuario"""
-    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Nombre completo")
+    name: Optional[str] = Field(
+        None, min_length=2, max_length=100, description="Nombre completo"
+    )
     email: Optional[EmailStr] = Field(None, description="Correo electrónico")
-    
-    @field_validator('email')
+
+    @field_validator("email")
+    @classmethod
     def email_must_be_lowercase(cls, v):
         if v:
             return v.lower().strip()
         return v
-    
-    @field_validator('name')
+
+    @field_validator("name")
+    @classmethod
     def name_must_be_clean(cls, v):
         if v:
             v = v.strip()
@@ -81,12 +93,14 @@ class UserProfileUpdate(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class ProfilePhotoResponse(BaseModel):
     """Respuesta de actualización de foto de perfil"""
     message: str
     photo_url: Optional[str] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 class UserPreferencesResponse(BaseModel):
     """Respuesta completa de preferencias del usuario"""
@@ -98,18 +112,20 @@ class UserPreferencesResponse(BaseModel):
     login_alerts: bool = True
     security_alerts: bool = True
 
-    
     # Interfaz
     language: LanguageEnum = LanguageEnum.ES
     theme: ThemeEnum = ThemeEnum.LIGHT
-    
+
     # Perfil
     profile_photo_url: Optional[str] = None
-    
+
+    # Módulos
+    convocatoria_enabled: bool = False
+
     # Metadata
     user_id: int
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -117,8 +133,9 @@ class EmailNotificationRequest(BaseModel):
     """Request para enviar notificación por email"""
     subject: str = Field(..., min_length=1, max_length=200)
     message: str = Field(..., min_length=1)
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # ========================================
 # LOGIN ALERTS
@@ -131,15 +148,17 @@ class LoginAlertConfig(BaseModel):
     notify_on_new_location: bool = True
     notify_on_suspicious_activity: bool = True
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "enabled": True,
                 "notify_on_new_device": True,
                 "notify_on_new_location": True,
-                "notify_on_suspicious_activity": True
+                "notify_on_suspicious_activity": True,
             }
         }
+    )
+
 
 class LoginAlertInfo(BaseModel):
     """Información de inicio de sesión para alertas"""
@@ -149,14 +168,14 @@ class LoginAlertInfo(BaseModel):
     timestamp: datetime
     is_suspicious: bool = False
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "device": "Chrome en Windows",
                 "location": "Madrid, España",
                 "ip_address": "192.168.1.1",
                 "timestamp": "2024-01-15T10:30:00",
-                "is_suspicious": False
+                "is_suspicious": False,
             }
         }
-
+    )

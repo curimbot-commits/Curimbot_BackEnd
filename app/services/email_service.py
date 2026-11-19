@@ -232,3 +232,20 @@ class EmailService:
             subject="Tus preferencias han sido actualizadas",
             html_content=html_content
         )
+        
+    def send_welcome_email(self, email: str, name: str) -> bool:
+        """Envía un correo de bienvenida al nuevo usuario."""
+        try:
+            self._send(
+                to=email,
+                subject="¡Bienvenido a Curim AI!",
+                html=f"""
+                    <h1>Hola {name}</h1>
+                    <p>Tu cuenta ha sido creada exitosamente.</p>
+                    <p>Ya puedes empezar a usar nuestra plataforma.</p>
+                """,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to {email}: {e}")
+            return False

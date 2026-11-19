@@ -5,6 +5,7 @@ Endpoints para gestión de usuarios (listar, cambiar rol, activar/desactivar)
 y estadísticas de inicio de sesión. Todos requieren privilegios de administrador.
 """
 
+from sqlalchemy.orm import joinedload
 import logging
 from datetime import datetime, timezone
 from typing import List
@@ -83,7 +84,10 @@ def get_all_users(
                 detail="Limit debe estar entre 1 y 100"
             )
 
-        query = db.query(User)
+        query = (
+            db.query(User)
+            .options(joinedload(User.preferences))  
+        )
         if active_only:
             query = query.filter(User.is_active == True)
 
@@ -94,11 +98,12 @@ def get_all_users(
                 id=user.id,
                 email=user.email,
                 name=user.name,
-                role=user.role.name,
+                role=user.role.name,                       
                 created_at=user.created_at,
                 last_login=user.last_login,
                 is_active=user.is_active,
-                two_factor_enabled=user.two_factor_enabled
+                two_factor_enabled=user.two_factor_enabled,
+                profile_photo_url=user.profile_photo_url, 
             )
             for user in users
         ]

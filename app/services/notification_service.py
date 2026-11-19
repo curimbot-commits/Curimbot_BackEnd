@@ -103,7 +103,8 @@ class NotificationService:
             NotificationType.PASSWORD_CHANGED: prefs.security_alerts,
             NotificationType.PASSWORD_RESET: True, # Siempre permitir reseteo de password
             NotificationType.WEEKLY_SUMMARY: prefs.weekly_summary,
-            NotificationType.PROFILE_UPDATED: True # Opcional: añadir preferencia para esto
+            NotificationType.PROFILE_UPDATED: True, # Opcional: añadir preferencia para esto
+            NotificationType.WELCOME: True,
         }
         return mapping.get(event_type, True)
 
@@ -144,6 +145,9 @@ class NotificationService:
             
             elif event_type == NotificationType.PROFILE_UPDATED:
                 return self.email_service.send_profile_update_notification(user.email, user.name, data['fields'])
+
+            elif event_type == NotificationType.WELCOME:
+                return self.email_service.send_welcome_email(user.email, user.name)
             
             return False
         except Exception as e:

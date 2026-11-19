@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import io
 import base64
@@ -13,22 +14,20 @@ from contextlib import contextmanager
 
 from app.db.crud import crud
 from app.models import models
-from app.models.models import Document, ActivityLog, User
-from app.enums.enums import FileType
+from app.models.models import Document, User
+from app.enums.enums import FileType, AIChannel, AIInteractionStatus
 from app.schemas.dashboard_schemas import ChartDataPoint, DashboardStats
 from app.schemas.document_schemas import DocumentWithMetadata
-from app.schemas.log_schemas import ActivityLogOut
+from app.schemas.log_schemas import AIInteractionLogOut
 from app.services.handlers.base import DocumentContext
 from app.services.handlers.validate_file import ValidateFileHandler
-from app.services.handlers.extract_text import ExtractTextHandler  
+from app.services.handlers.extract_text import ExtractTextHandler
 from app.services.handlers.encrypt_file import EncryptFileHandler
 from app.services.handlers.save_to_db import SaveToDBHandler
-from app.services.handlers.log_activity import LogActivityHandler
 from sqlalchemy.orm import joinedload
 from app.db.crud.crud import (
     get_document_by_id,
     get_documents_list,
-    create_activity_log,
     search_documents,
 )
 from app.services import storage_service
@@ -57,7 +56,7 @@ class DocumentEncryptionError(DocumentServiceError):
 
 
 class DocumentService:
-    
+
     @staticmethod
     @contextmanager
     def db_transaction(db: Session):
@@ -69,7 +68,7 @@ class DocumentService:
             db.rollback()
             logging.error(f"Database transaction failed: {e}")
             raise
-    
+
     @staticmethod
     def _validate_user_access(doc: Document, user) -> None:
         """Validate if user has access to document"""
@@ -80,13 +79,9 @@ class DocumentService:
         if doc.uploaded_by != user.id:
             raise DocumentAccessDeniedError("No tiene permisos para acceder a este documento")
 
-    @staticmethod
-    def _safe_activity_log(db: Session, user_id: int, document_id: int, action: str, ip_address: str = None):
-        """Safely create activity log without affecting main operation"""
-        try:
-            create_activity_log(db, user_id=user_id, document_id=document_id, action=action, ip_address=ip_address)
-        except Exception as e:
-            logging.warning(f"Failed to create activity log: {e}")
+    # =========================================================
+    # NOTA: _safe_activity_log ELIMINADO (ya no existe ActivityLog)
+    # =========================================================
 
     @staticmethod
     async def upload_documents(files: List[UploadFile], db: Session, user) -> List[Document]:
@@ -95,21 +90,20 @@ class DocumentService:
         """
         if not files:
             raise HTTPException(status_code=400, detail="No se proporcionaron archivos")
-        
-        if len(files) > 10:  # Limitar cantidad de archivos
+
+        if len(files) > 10:
             raise HTTPException(status_code=400, detail="Máximo 10 archivos por operación")
-        
+
         created_documents = []
         failed_files = []
 
         for f in files:
             try:
-                # Validaciones básicas
                 if not f.filename:
                     failed_files.append({"filename": "sin_nombre", "error": "Nombre de archivo vacío"})
                     continue
-                
-                if f.size and f.size > 50 * 1024 * 1024:  # 50MB limit
+
+                if f.size and f.size > 50 * 1024 * 1024:
                     failed_files.append({"filename": f.filename, "error": "Archivo demasiado grande (máximo 50MB)"})
                     continue
 
@@ -118,22 +112,21 @@ class DocumentService:
                     failed_files.append({"filename": f.filename, "error": "Archivo vacío"})
                     continue
 
-                # Reset file position
                 await f.seek(0)
-                
+
                 context = DocumentContext(filename=f.filename, content=content, user=user, db=db)
 
+                # Chain SIN LogActivityHandler (ya no aplica)
                 handler_chain = (
                     ValidateFileHandler()
                     .set_next(ExtractTextHandler())
                     .set_next(EncryptFileHandler())
                     .set_next(SaveToDBHandler())
-                    .set_next(LogActivityHandler())
                 )
 
                 with DocumentService.db_transaction(db):
-                    handler_chain.handle(context)
-                    
+                    await handler_chain.handle(context)
+
                     if context.document:
                         db.refresh(context.document)
                         created_documents.append(context.document)
@@ -151,15 +144,13 @@ class DocumentService:
                 failed_files.append({"filename": f.filename, "error": "Error interno del servidor"})
                 logging.exception(f"Error inesperado procesando {f.filename}: {e}")
 
-        # Si todos los archivos fallaron
         if not created_documents and failed_files:
             error_details = "; ".join([f"{item['filename']}: {item['error']}" for item in failed_files])
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"No se pudo procesar ningún archivo. Errores: {error_details}"
             )
-        
-        # Si algunos fallaron, log warnings
+
         if failed_files:
             error_summary = f"Archivos fallidos: {len(failed_files)}/{len(files)}"
             logging.warning(f"Upload parcialmente exitoso - {error_summary}")
@@ -175,15 +166,13 @@ class DocumentService:
         file_type: Optional[FileType] = None
     ) -> Tuple[List[models.Document], int]:
 
-        # Obtener documentos filtrados por usuario O públicos, y opcionalmente por tipo
-        # Un usuario ve sus propios documentos Y los documentos públicos (subidos por admin)
         query = db.query(models.Document).filter(
             (models.Document.uploaded_by == user.id) | (models.Document.is_public == 1)
         )
-        
+
         if file_type:
             query = query.filter(models.Document.file_type == file_type.value)
-            
+
         total = query.count()
         documents = query.order_by(models.Document.created_at.desc()).offset(skip).limit(limit).all()
 
@@ -200,21 +189,18 @@ class DocumentService:
 
             doc = get_document_by_id(db, doc_id)
             DocumentService._validate_user_access(doc, user)
-            
-            # Actualizar última vista y contador
+
+            # Actualizar última vista y contador (SIN activity log)
             try:
                 doc.last_accessed = datetime.datetime.now()
                 doc.view_count = (doc.view_count or 0) + 1
-                
-                DocumentService._safe_activity_log(db, user_id=user.id, document_id=doc.id, action="view")
                 db.commit()
                 db.refresh(doc)
-                
             except Exception as e:
                 logging.warning(f"Failed to update view metadata for doc {doc_id}: {e}")
-            
+
             return doc
-            
+
         except DocumentNotFoundError:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         except DocumentAccessDeniedError:
@@ -230,22 +216,17 @@ class DocumentService:
     def download_document(doc_id: int, request: Request, db: Session, user) -> Tuple[bytes, Document]:
         """
         Download document with comprehensive error handling.
-        Admins can download any document, while regular users can only download their own.
         """
         try:
             if doc_id <= 0:
                 raise HTTPException(status_code=400, detail="ID de documento inválido")
 
             doc = get_document_by_id(db, doc_id)
-            
-            # Validar el acceso del usuario
             DocumentService._validate_user_access(doc, user)
 
-            # Verificar si el documento tiene contenido
             if not doc.blob_enc:
                 raise HTTPException(status_code=404, detail="Contenido del documento no encontrado")
 
-            # Desencriptar contenido
             try:
                 encrypted_data = doc.blob_enc
                 if isinstance(encrypted_data, str):
@@ -256,7 +237,7 @@ class DocumentService:
                         raise HTTPException(status_code=400, detail="Formato de datos cifrados inválido")
 
                 raw_data = storage_service.decrypt_bytes(encrypted_data)
-                
+
                 if not raw_data:
                     raise HTTPException(status_code=404, detail="No se pudo recuperar el contenido del documento")
 
@@ -267,22 +248,16 @@ class DocumentService:
                 logging.error(f"Decryption error for doc {doc_id}: {e}")
                 raise HTTPException(status_code=500, detail="Error interno al procesar el documento")
 
-            # Registrar la descarga y actualizar contadores
+            # Actualizar contadores (SIN activity log)
             try:
-                ip = getattr(request.client, 'host', 'unknown') if request.client else 'unknown'
                 doc.download_count = (doc.download_count or 0) + 1
                 doc.last_accessed = datetime.datetime.now()
-                
-                DocumentService._safe_activity_log(
-                    db, user_id=user.id, document_id=doc.id, action="download", ip_address=ip
-                )
                 db.commit()
-
             except Exception as e:
-                logging.warning(f"Failed to log download activity for doc {doc_id}: {e}")
+                logging.warning(f"Failed to update download metrics for doc {doc_id}: {e}")
 
             return raw_data, doc
-            
+
         except DocumentNotFoundError:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         except DocumentAccessDeniedError:
@@ -303,7 +278,6 @@ class DocumentService:
         Get dashboard statistics with TYPE BREAKDOWN
         """
         try:
-            # Base query - filtrar por usuario si se especifica
             base_query = db.query(models.Document)
             if user_id:
                 base_query = base_query.filter(models.Document.uploaded_by == user_id)
@@ -315,28 +289,24 @@ class DocumentService:
             start_week = today - datetime.timedelta(days=today.weekday())
             start_month = today.replace(day=1)
 
-            # Stats por período
             docs_today = base_query.filter(func.date(models.Document.created_at) == today).count()
             docs_week = base_query.filter(models.Document.created_at >= start_week).count()
             docs_month = base_query.filter(models.Document.created_at >= start_month).count()
 
-            # Promedio por día
             first_doc_date = base_query.with_entities(func.min(models.Document.created_at)).scalar()
             avg_per_day = 0
             if first_doc_date:
                 days_diff = max((today - first_doc_date.date()).days, 1)
                 avg_per_day = total_docs / days_diff
 
-            # 🔥 AGREGAR TYPE BREAKDOWN - ESTO ES CRÍTICO
             type_breakdown_query = base_query.with_entities(
                 models.Document.file_type,
                 func.count(models.Document.id).label('count'),
                 func.sum(models.Document.size).label('size')
             ).group_by(models.Document.file_type)
-            
+
             type_breakdown_results = type_breakdown_query.all()
-            
-            # Convertir a formato del schema
+
             type_breakdown = [
                 {
                     "file_type": str(item.file_type.value) if item.file_type else "unknown",
@@ -345,10 +315,9 @@ class DocumentService:
                 }
                 for item in type_breakdown_results
             ]
-            
+
             logging.info(f"📊 Type breakdown generado: {type_breakdown}")
 
-            # Usuario más activo (solo si no hay filtro de usuario)
             most_active_user = None
             if not user_id:
                 try:
@@ -363,7 +332,6 @@ class DocumentService:
                 except Exception as e:
                     logging.warning(f"Failed to get most active user: {e}")
 
-            # Período pico de subidas
             peak_upload_time = None
             try:
                 peak_time = (
@@ -388,9 +356,9 @@ class DocumentService:
                 averagePerDay=round(avg_per_day, 2),
                 mostActiveUser=most_active_user,
                 peakUploadTime=peak_upload_time,
-                typeBreakdown=type_breakdown  
+                typeBreakdown=type_breakdown
             )
-            
+
         except SQLAlchemyError as e:
             logging.error(f"Database error getting dashboard stats: {e}")
             raise HTTPException(status_code=500, detail="Error al obtener estadísticas del dashboard")
@@ -406,14 +374,13 @@ class DocumentService:
         try:
             today = datetime.date.today()
             valid_periods = ["week", "month", "year"]
-            
+
             if period not in valid_periods:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"Período inválido. Use: {', '.join(valid_periods)}"
                 )
 
-            # Configurar fechas según período
             if period == "week":
                 start_date = today - datetime.timedelta(days=6)
                 group_format = "%Y-%m-%d"
@@ -424,15 +391,13 @@ class DocumentService:
                 start_date = today.replace(month=1, day=1)
                 group_format = "%Y-%m"
 
-            # Base query
             base_query = db.query(models.Document).filter(
                 models.Document.created_at >= start_date
             )
-            
+
             if user_id:
                 base_query = base_query.filter(models.Document.uploaded_by == user_id)
 
-            # Query para datos del gráfico
             query = (
                 base_query.with_entities(
                     func.date_format(models.Document.created_at, group_format).label("period"),
@@ -452,43 +417,39 @@ class DocumentService:
             )
 
             results = query.all()
-            
-            # Formatear resultados
+
             chart_data = []
             for row in results:
-                # Convertir período a formato legible
                 label = row.period
-                if period == "week" or period == "month":
-                    # Convertir "2025-10-10" a "10 Oct"
+                if period in ("week", "month"):
                     try:
                         date_obj = datetime.datetime.strptime(row.period, "%Y-%m-%d")
                         label = date_obj.strftime("%d %b")
-                    except:
+                    except Exception:
                         label = row.period
                 elif period == "year":
-                    # Convertir "2025-10" a "Oct 2025"
                     try:
                         date_obj = datetime.datetime.strptime(row.period, "%Y-%m")
                         label = date_obj.strftime("%b %Y")
-                    except:
+                    except Exception:
                         label = row.period
-                
+
                 chart_data.append(
                     ChartDataPoint(
                         period=row.period,
-                        label=label,  
-                        value=row.total or 0, 
+                        label=label,
+                        value=row.total or 0,
                         pdf=row.pdf or 0,
                         docx=row.docx or 0,
                         txt=row.txt or 0,
                         total=row.total or 0
                     )
                 )
-            
+
             logging.info(f"📊 Chart data generado: {len(chart_data)} puntos para período '{period}'")
-            
+
             return chart_data
-            
+
         except HTTPException:
             raise
         except SQLAlchemyError as e:
@@ -497,7 +458,7 @@ class DocumentService:
         except Exception as e:
             logging.exception(f"Unexpected error getting chart data for period {period}: {e}")
             raise HTTPException(status_code=500, detail="Error interno del servidor")
-    
+
     @staticmethod
     def search_documents(
         db: Session,
@@ -509,9 +470,6 @@ class DocumentService:
     ) -> Tuple[List[dict], int]:
         """
         Busca documentos con filtros y paginación.
-        Si el usuario es admin, puede ver todos los documentos.
-        Si es usuario normal, solo los suyos.
-        Retorna lista de documentos como dicts incluyendo uploaded_by_name.
         """
         try:
             if skip < 0:
@@ -526,7 +484,6 @@ class DocumentService:
             if not user or not user.is_admin:
                 if not user:
                     raise HTTPException(status_code=401, detail="Usuario no autenticado")
-                # Usuarios normales ven sus docs O docs públicos
                 query = query.filter(
                     (Document.uploaded_by == user.id) | (Document.is_public == 1)
                 )
@@ -559,7 +516,6 @@ class DocumentService:
                     "file_type": doc.file_type.value if hasattr(doc.file_type, 'value') else doc.file_type,
                     "created_at": doc.created_at.isoformat() if doc.created_at else None,
                     "uploaded_by_name": doc.owner.name if doc.owner else None,
-                    # Agrega más campos si los necesitas
                 })
 
             return result, total
@@ -573,70 +529,88 @@ class DocumentService:
             logging.exception(f"Unexpected error searching documents: {e}")
             raise HTTPException(status_code=500, detail="Error interno del servidor")
 
-
     @staticmethod
-    def get_recent_activities(limit: int, db: Session, user_id: int = None) -> List[ActivityLogOut]:
+    def get_recent_ai_interactions(
+        limit: int,
+        db: Session,
+        user_id: int = None,
+        channel: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[AIInteractionLogOut]:
+        """
+        Obtener últimas interacciones del usuario con la IA.
+        """
         try:
             if limit <= 0 or limit > 100:
                 raise HTTPException(status_code=400, detail="Limit debe estar entre 1 y 100")
 
-            query = db.query(models.ActivityLog).options(
-                joinedload(models.ActivityLog.document),
-                joinedload(models.ActivityLog.user)
+            query = db.query(models.AIInteractionLog).options(
+                joinedload(models.AIInteractionLog.user)
             )
 
             if user_id:
-                query = query.filter(models.ActivityLog.user_id == user_id)
+                query = query.filter(models.AIInteractionLog.user_id == user_id)
 
-            activities = (
-                query.order_by(models.ActivityLog.timestamp.desc())
+            if channel:
+                try:
+                    channel_enum = AIChannel(channel)
+                    query = query.filter(models.AIInteractionLog.channel == channel_enum)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Canal inválido: {channel}")
+
+            if status:
+                try:
+                    status_enum = AIInteractionStatus(status)
+                    query = query.filter(models.AIInteractionLog.status == status_enum)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"Estado inválido: {status}")
+
+            rows = (
+                query.order_by(models.AIInteractionLog.timestamp.desc())
                 .limit(limit)
                 .all()
             )
 
-            result = []
-
-            for act in activities:
-                if not act.timestamp:
-                    logging.warning(f"Actividad ID {act.id} sin timestamp. Omitida.")
+            result: List[AIInteractionLogOut] = []
+            for r in rows:
+                if not r.timestamp:
+                    logging.warning(f"AIInteractionLog ID {r.id} sin timestamp. Omitida.")
                     continue
 
-                document_name = (
-                    act.document_name
-                    or (act.document.filename if act.document else None)
-                    or "Archivo eliminado"
-                )
-
-            
-                document_type = (
-                    act.document_type
-                    or (act.document.file_type if act.document else None)
-                    or FileType.txt  # fallback seguro
-                )
-
                 user_name = (
-                    act.user.name
-                    if act.user and act.user.name
-                    else "Usuario eliminado"
+                    r.user.name if r.user and r.user.name else "Usuario eliminado"
                 )
 
-            
-                user_email = (
-                    act.user.email
-                    if act.user and act.user.email
-                    else None
-                )
+                sources_parsed = None
+                if r.sources:
+                    try:
+                        sources_parsed = json.loads(r.sources)
+                    except Exception:
+                        sources_parsed = None
 
-                result.append(ActivityLogOut(
-                    id=act.id,
-                    action=act.action,
-                    document_id=act.document_id,
-                    document_name=document_name,
-                    document_type=document_type,
-                    user_id=act.user_id,
+                sources_info_parsed = None
+                if r.sources_info:
+                    try:
+                        sources_info_parsed = json.loads(r.sources_info)
+                    except Exception:
+                        sources_info_parsed = None
+
+                result.append(AIInteractionLogOut(
+                    id=r.id,
+                    user_id=r.user_id,
                     user_name=user_name,
-                    timestamp=act.timestamp,
-                    ip_address=act.ip_address,
+                    question=r.question,
+                    answer=r.answer,
+                    channel=r.channel,
+                    confidence=r.confidence,
+                    status=r.status,
+                    error_message=r.error_message,
+                    sources=sources_parsed,
+                    sources_info=sources_info_parsed,
+                    processing_time_ms=r.processing_time_ms,
+                    from_cache=r.from_cache,
+                    conversation_id=r.conversation_id,
+                    timestamp=r.timestamp,
                 ))
 
             return result
@@ -644,91 +618,62 @@ class DocumentService:
         except HTTPException:
             raise
         except SQLAlchemyError as e:
-            logging.error(f"Database error getting recent activities: {e}")
-            raise HTTPException(status_code=500, detail="Error al obtener actividades recientes")
+            logging.error(f"Database error getting recent AI interactions: {e}")
+            raise HTTPException(status_code=500, detail="Error al obtener interacciones recientes")
         except Exception as e:
-            logging.exception(f"Unexpected error getting recent activities: {e}")
+            logging.exception(f"Unexpected error getting recent AI interactions: {e}")
             raise HTTPException(status_code=500, detail="Error interno del servidor")
 
     @staticmethod
     def delete_document(doc_id: int, user, db: Session, ip: str = None) -> dict:
         """
         Elimina documento con manejo integral de errores y limpieza
-        
-        Args:
-            doc_id: ID del documento a eliminar
-            user: Usuario que solicita la eliminación
-            db: Sesión de base de datos
-            ip: Dirección IP del cliente (opcional)
-            
-        Returns:
-            dict con mensaje de confirmación y detalles del documento eliminado
-            
-        Raises:
-            HTTPException: Si hay errores de validación, permisos o base de datos
         """
         try:
-            # Validar ID
             if doc_id <= 0:
                 raise HTTPException(status_code=400, detail="ID de documento inválido")
 
-            # Obtener documento
             doc = crud.get_document_by_id(db, doc_id)
             if not doc:
                 raise HTTPException(status_code=404, detail="Documento no encontrado")
-            
-            # Validar permisos
+
             DocumentService._validate_user_access(doc, user)
 
-            # Guardar información antes de eliminar (para logging y respuesta)
             filename = doc.filename
             doc_size = doc.size
-            file_path = getattr(doc, 'file_path', None)  # Si guardas ruta del archivo
 
             try:
-                # 1. Registrar actividad ANTES de eliminar (mientras doc.id aún existe)
-                DocumentService._safe_activity_log(
-                    db, 
-                    user_id=user.id, 
-                    document_id=doc.id, 
-                    action="delete", 
-                    ip_address=ip
-                )
-                
-                # 2. Eliminar de la base de datos
-                # Esto automáticamente eliminará registros en Curim_document_index por CASCADE
+                # SIN activity log: solo eliminar
                 db.delete(doc)
                 db.commit()
-                
-            except IntegrityError as e:
+
+            except IntegrityError:
                 db.rollback()
                 raise HTTPException(
-                    status_code=409, 
+                    status_code=409,
                     detail="No se puede eliminar el documento debido a restricciones de integridad"
                 )
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 db.rollback()
                 raise HTTPException(
-                    status_code=500, 
+                    status_code=500,
                     detail="Error de base de datos al eliminar documento"
                 )
-            
-        
+
             return {
                 "message": "Documento eliminado correctamente",
                 "document_id": doc_id,
                 "filename": filename,
                 "size": doc_size
             }
-            
+
         except DocumentNotFoundError:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         except DocumentAccessDeniedError:
             raise HTTPException(status_code=403, detail="No autorizado para eliminar este documento")
         except HTTPException:
-            # Re-lanzar excepciones HTTP ya manejadas
             raise
-        except Exception as e:
+        except Exception:
             raise HTTPException(status_code=500, detail="Error interno del servidor")
 
     @staticmethod
@@ -739,13 +684,12 @@ class DocumentService:
         try:
             query = db.query(models.Document).options(joinedload(models.Document.owner))
             if user_id:
-                # Si se solicita para un usuario específico, incluir sus docs O los públicos
                 query = query.filter(
                     (models.Document.uploaded_by == user_id) | (models.Document.is_public == 1)
                 )
-                
+
             documents = query.all()
-            
+
             return [
                 DocumentWithMetadata(
                     id=doc.id,
@@ -761,7 +705,7 @@ class DocumentService:
                 )
                 for doc in documents
             ]
-            
+
         except SQLAlchemyError as e:
             logging.error(f"Database error getting documents with metadata: {e}")
             raise HTTPException(status_code=500, detail="Error al obtener metadatos de documentos")
@@ -776,11 +720,10 @@ class DocumentService:
         """
         try:
             user_docs = db.query(models.Document).filter(models.Document.uploaded_by == user_id)
-            
+
             total_documents = user_docs.count()
             total_size = user_docs.with_entities(func.sum(models.Document.size)).scalar() or 0
-            
-            # Estadísticas por tipo de archivo
+
             type_stats = (
                 user_docs.with_entities(
                     models.Document.file_type,
@@ -790,7 +733,7 @@ class DocumentService:
                 .group_by(models.Document.file_type)
                 .all()
             )
-            
+
             return {
                 "user_id": user_id,
                 "total_documents": total_documents,
@@ -804,7 +747,7 @@ class DocumentService:
                     for stat in type_stats
                 ]
             }
-            
+
         except SQLAlchemyError as e:
             logging.error(f"Database error getting user storage stats for user {user_id}: {e}")
             raise HTTPException(status_code=500, detail="Error al obtener estadísticas de almacenamiento")
