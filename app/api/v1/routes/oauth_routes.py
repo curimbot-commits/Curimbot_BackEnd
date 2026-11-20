@@ -1,11 +1,9 @@
 """
-Rutas OAuth para autenticación social con Google y GitHub.
+Rutas OAuth para autenticación social con Google.
 
 Endpoints:
     GET /auth/google/login        → Redirige a Google
     GET /auth/google/callback     → Procesa respuesta de Google
-    GET /auth/github/login        → Redirige a GitHub
-    GET /auth/github/callback     → Procesa respuesta de GitHub
 
 Anti-CSRF (state):
     - Formato: {timestamp}.{token_hex}.{hmac_signature_hex}, firmado con SECRET_KEY
@@ -56,9 +54,8 @@ router = APIRouter(prefix="/auth", tags=["OAuth - Social Login"])
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4200")
 BACKEND_URL  = os.getenv("BACKEND_URL",  "http://localhost:8000")
 
-# URIs FIJOS — registrados exactamente así en Google Cloud Console y GitHub OAuth App
+# URI FIJO — registrado exactamente así en Google Cloud Console
 GOOGLE_CALLBACK_URI = f"{BACKEND_URL}/auth/google/callback"
-GITHUB_CALLBACK_URI = f"{BACKEND_URL}/auth/github/callback"
 
 STATE_COOKIE = "oauth_state"
 STATE_MAX_AGE_SECONDS = 600
@@ -230,44 +227,3 @@ async def google_callback(
 ):
     return await _handle_callback("Google", OAuthService.handle_google_callback,
                                   GOOGLE_CALLBACK_URI, request, code, state, error, db)
-
-
-# =========================================================
-# GITHUB OAUTH
-# =========================================================
-
-@router.get(
-    "/github/login",
-    summary="Iniciar login con GitHub",
-    description="Redirige al usuario a la pantalla de autorización de GitHub",
-    dependencies=[Depends(rate_limit(20, 60))],
-)
-def github_login():
-    """
-    Inicia el flujo OAuth con GitHub.
-    Angular debe navegar a: {apiUrl}/auth/github/login
-    """
-    try:
-        state = _generate_state()
-        auth_url = OAuthService.get_github_auth_url(redirect_uri=GITHUB_CALLBACK_URI, state=state)
-        return _redirect_with_state(auth_url, state)
-    except OAuthError as e:
-        logger.error(f"Error iniciando OAuth con GitHub: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="Login con GitHub no disponible")
-
-
-@router.get(
-    "/github/callback",
-    summary="Callback de GitHub OAuth",
-    description="GitHub redirige aquí después de que el usuario autoriza",
-)
-async def github_callback(
-    request: Request,
-    db: Session = Depends(get_db),
-    code:  Annotated[Optional[str], Query(description="Código de autorización de GitHub")] = None,
-    state: Annotated[Optional[str], Query(description="State devuelto por GitHub")] = None,
-    error: Annotated[Optional[str], Query(description="Error si el usuario canceló")] = None,
-):
-    return await _handle_callback("GitHub", OAuthService.handle_github_callback,
-                                  GITHUB_CALLBACK_URI, request, code, state, error, db)

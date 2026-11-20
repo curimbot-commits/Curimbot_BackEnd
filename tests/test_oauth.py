@@ -114,50 +114,6 @@ def test_set_cookies_endpoint_was_removed(client):
     assert r.status_code in (404, 405)
 
 
-@pytest.fixture
-def fake_github(monkeypatch):
-    state = {"emails": []}
-
-    async def fake_exchange(code, redirect_uri):
-        return "github-access"
-
-    async def fake_profile(access_token):
-        # Email público del perfil: se ignora (GitHub no dice si está verificado)
-        return {"id": uuid.uuid4().int % 10**9, "login": "gh", "email": "publico@ejemplo.com"}
-
-    async def fake_emails(access_token):
-        for e in state["emails"]:
-            if e.get("primary") and e.get("verified"):
-                return e["email"]
-        return next((e["email"] for e in state["emails"] if e.get("verified")), None)
-
-    monkeypatch.setenv("GITHUB_CLIENT_ID", "test-client")
-    monkeypatch.setattr(OAuthService, "_exchange_github_code", staticmethod(fake_exchange))
-    monkeypatch.setattr(OAuthService, "_get_github_profile", staticmethod(fake_profile))
-    monkeypatch.setattr(OAuthService, "_get_github_primary_email", staticmethod(fake_emails))
-    return state
-
-
-def _github_flow(client):
-    client.cookies.clear()
-    r = client.get("/auth/github/login", follow_redirects=False)
-    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
-    return client.get(
-        "/auth/github/callback",
-        params={"code": "abc", "state": state},
-        follow_redirects=False,
-    )
-
-
-def test_github_uses_verified_email(client, make_user, fake_github):
-    user = make_user()
-    fake_github["emails"] = [{"email": user.email, "primary": True, "verified": True}]
-    r = _github_flow(client)
-    assert r.headers["location"].endswith("/auth/callback?status=success")
-
-
-def test_github_without_verified_email_fails(client, fake_github):
-    fake_github["emails"] = [{"email": "x@ejemplo.com", "primary": True, "verified": False}]
-    r = _github_flow(client)
-    assert r.headers["location"].endswith("error=oauth_failed")
-    assert "access_token" not in r.cookies
+def test_github_login_was_removed(client):
+    assert client.get("/auth/github/login", follow_redirects=False).status_code == 404
+    assert client.get("/auth/github/callback", follow_redirects=False).status_code == 404

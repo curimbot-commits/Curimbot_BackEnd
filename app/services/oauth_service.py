@@ -1,12 +1,11 @@
 """
-Servicio OAuth para autenticación social con Google y GitHub.
+Servicio OAuth para autenticación social con Google.
 
 Implementa el patrón Socialite de Laravel pero en FastAPI:
     - Google OAuth2 (OpenID Connect)
-    - GitHub OAuth2
 
 Flujo completo:
-    1. Usuario hace clic en "Login con Google/GitHub"
+    1. Usuario hace clic en "Login con Google"
     2. Backend redirige al provider
     3. Provider redirige a callback con ?code=
     4. Backend intercambia code por access_token
@@ -42,12 +41,6 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 
-# URLs de GitHub OAuth2
-GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
-GITHUB_USER_URL = "https://api.github.com/user"
-GITHUB_EMAIL_URL = "https://api.github.com/user/emails"
-GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
-
 
 # =========================================================
 # OAUTH SERVICE
@@ -55,15 +48,13 @@ GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
 
 class OAuthService:
     """
-    Servicio centralizado para OAuth con Google y GitHub.
+    Servicio centralizado para OAuth con Google.
 
     Equivalente a Laravel Socialite pero para FastAPI + MySQL.
 
     Métodos principales:
         - get_google_auth_url(): URL para redirigir al login de Google
-        - get_github_auth_url(): URL para redirigir al login de GitHub
         - handle_google_callback(): Procesa callback de Google
-        - handle_github_callback(): Procesa callback de GitHub
 
     Cada handle_*_callback() retorna un JWT listo para enviar a Angular.
 
@@ -213,173 +204,6 @@ class OAuthService:
         return {}
 
     # -------------------------------------------------------
-    # GITHUB
-    # -------------------------------------------------------
-
-    @staticmethod
-    def get_github_auth_url(redirect_uri: str, state: str) -> str:
-        """
-        Construye la URL de autorización de GitHub.
-
-        Args:
-            redirect_uri: URL de callback de tu backend
-            state: Token aleatorio para prevenir CSRF
-
-        Returns:
-            str: URL completa para redirigir al usuario
-        """
-        import urllib.parse
-
-        params = {
-            "client_id": _get_env("GITHUB_CLIENT_ID"),
-            "redirect_uri": redirect_uri,
-            "scope": "user:email read:user",
-            "state": state,
-        }
-
-        return f"{GITHUB_AUTH_URL}?{urllib.parse.urlencode(params)}"
-
-    @staticmethod
-    async def handle_github_callback(
-        code: str,
-        redirect_uri: str,
-        db: Session
-    ) -> User:
-        """
-        Procesa el callback de GitHub y devuelve el usuario autenticado.
-        Solo usa emails verificados por GitHub (primary+verified de /user/emails).
-
-        Nota importante sobre GitHub:
-            GitHub puede no devolver el email si el usuario lo tiene privado.
-            En ese caso se hace una segunda request a /user/emails para obtenerlo.
-
-        Args:
-            code: Código de autorización recibido de GitHub
-            redirect_uri: URL de callback registrada en GitHub
-            db: Sesión de MySQL
-
-        Returns:
-            User: usuario autenticado
-
-        Raises:
-            OAuthError: Si falla el intercambio de tokens o la API de GitHub
-        """
-        # 1. Obtener access_token de GitHub
-        access_token = await OAuthService._exchange_github_code(code, redirect_uri)
-
-        if not access_token:
-            raise OAuthError("No se pudo obtener access_token de GitHub")
-
-        # 2. Obtener perfil del usuario
-        profile = await OAuthService._get_github_profile(access_token)
-
-        provider_id = profile.get("id")
-        name = profile.get("name") or profile.get("login", "GitHub User")
-        avatar = profile.get("avatar_url")
-
-        # El email del perfil no indica si está verificado: se usa siempre el
-        # de /user/emails marcado como verified (la cuenta se vincula por email).
-        email = await OAuthService._get_github_primary_email(access_token)
-
-        if not provider_id:
-            raise OAuthError("Perfil de GitHub incompleto (falta id)")
-
-        if not email:
-            raise OAuthError(
-                "GitHub no devolvió ningún email verificado para esta cuenta"
-            )
-
-        # 3. Buscar o crear usuario en MySQL
-        user = OAuthService._find_or_create_user(
-            provider="github",
-            provider_id=str(provider_id),
-            email=str(email),
-            name=str(name),
-            avatar=avatar,
-            db=db
-        )
-
-        return user
-
-    @staticmethod
-    async def _exchange_github_code(code: str, redirect_uri: str) -> Optional[str]:
-        """Intercambia authorization code por access_token con GitHub."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                GITHUB_TOKEN_URL,
-                json={
-                    "code": code,
-                    "client_id": _get_env("GITHUB_CLIENT_ID"),
-                    "client_secret": _get_env("GITHUB_CLIENT_SECRET"),
-                    "redirect_uri": redirect_uri,
-                },
-                headers={"Accept": "application/json"},
-                timeout=10.0
-            )
-
-            if response.status_code != 200:
-                logger.error(f"GitHub token exchange failed: {response.text}")
-                raise OAuthError("Error al intercambiar código de GitHub")
-
-            data = response.json()
-            return data.get("access_token")
-
-    @staticmethod
-    async def _get_github_profile(access_token: str) -> dict:
-        """Obtiene el perfil del usuario autenticado en GitHub."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                GITHUB_USER_URL,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github+json",
-                },
-                timeout=10.0
-            )
-
-            if response.status_code != 200:
-                logger.error(f"GitHub user failed: {response.text}")
-                raise OAuthError("Error al obtener perfil de GitHub")
-
-            return response.json()
-        return {}
-
-    @staticmethod
-    async def _get_github_primary_email(access_token: str) -> Optional[str]:
-        """
-        Obtiene el email primario verificado de GitHub.
-
-        Busca el email marcado como primary=True y verified=True.
-        """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                GITHUB_EMAIL_URL,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github+json",
-                },
-                timeout=10.0
-            )
-
-            if response.status_code != 200:
-                logger.warning(f"GitHub emails endpoint failed: {response.text}")
-                return None
-
-            emails = response.json()
-
-            # Buscar email primario verificado
-            for email_obj in emails:
-                if email_obj.get("primary") and email_obj.get("verified"):
-                    return email_obj.get("email")
-
-            # Si no hay primario verificado, tomar el primer verificado
-            for email_obj in emails:
-                if email_obj.get("verified"):
-                    return email_obj.get("email")
-
-            return None
-
-    # -------------------------------------------------------
     # LÓGICA COMPARTIDA
     # -------------------------------------------------------
 
@@ -405,7 +229,7 @@ class OAuthService:
         con distintos métodos de login.
 
         Args:
-            provider: "google" o "github"
+            provider: nombre del proveedor (p. ej. "google")
             provider_id: ID único del usuario en el provider
             email: Email del usuario
             name: Nombre completo
@@ -469,7 +293,7 @@ class OAuthService:
         El primer usuario registrado en el sistema sigue siendo admin.
 
         Args:
-            provider: "google" o "github"
+            provider: nombre del proveedor (p. ej. "google")
             provider_id: ID del usuario en el provider
             email: Email verificado
             name: Nombre completo
