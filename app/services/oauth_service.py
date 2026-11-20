@@ -112,16 +112,17 @@ class OAuthService:
         code: str,
         redirect_uri: str,
         db: Session
-    ) -> Tuple[str, str]:
+    ) -> User:
         """
-        Procesa el callback de Google y retorna un JWT.
+        Procesa el callback de Google y devuelve el usuario autenticado.
 
         Pasos internos:
             1. Intercambia code por access_token con Google
             2. Obtiene perfil del usuario (email, name, picture, sub)
-            3. Busca usuario en MySQL por provider_id
-            4. Si no existe, lo crea automáticamente
-            5. Genera JWT con security_service (mismo que login normal)
+            3. Exige email verificado por Google
+            4. Busca usuario por provider_id o email; si no existe, lo crea
+
+        La emisión de sesión (o el desafío 2FA) la decide la ruta.
 
         Args:
             code: Código de autorización recibido de Google
@@ -129,9 +130,10 @@ class OAuthService:
             db: Sesión de MySQL
 
         Returns:
-            str: access_token JWT
+            User: usuario autenticado
 
         Raises:
+            OAuthEmailNotVerifiedError: Si Google no verificó el email
             OAuthError: Si falla el intercambio de tokens o la API de Google
         """
         # 1. Obtener access_token de Google
@@ -152,7 +154,12 @@ class OAuthService:
         if not provider_id or not email:
             raise OAuthError("Perfil de Google incompleto (falta sub o email)")
 
-        # 3. Buscar o crear usuario en MySQL
+        # 3. Sin email verificado no se puede vincular por email a una cuenta
+        #    existente: permitiría apropiarse de ella.
+        if profile.get("email_verified") is not True:
+            raise OAuthEmailNotVerifiedError("El email de Google no está verificado")
+
+        # 4. Buscar o crear usuario en MySQL
         user = OAuthService._find_or_create_user(
             provider="google",
             provider_id=str(provider_id),
@@ -162,8 +169,7 @@ class OAuthService:
             db=db
         )
 
-        # 4. Generar tokens (mismo formato que login normal)
-        return OAuthService._generate_jwt(user)
+        return user
 
     @staticmethod
     async def _exchange_google_code(code: str, redirect_uri: str) -> dict:
@@ -238,9 +244,10 @@ class OAuthService:
         code: str,
         redirect_uri: str,
         db: Session
-    ) -> Tuple[str, str]:
+    ) -> User:
         """
-        Procesa el callback de GitHub y retorna un JWT.
+        Procesa el callback de GitHub y devuelve el usuario autenticado.
+        Solo usa emails verificados por GitHub (primary+verified de /user/emails).
 
         Nota importante sobre GitHub:
             GitHub puede no devolver el email si el usuario lo tiene privado.
@@ -252,7 +259,7 @@ class OAuthService:
             db: Sesión de MySQL
 
         Returns:
-            str: access_token JWT
+            User: usuario autenticado
 
         Raises:
             OAuthError: Si falla el intercambio de tokens o la API de GitHub
@@ -270,18 +277,16 @@ class OAuthService:
         name = profile.get("name") or profile.get("login", "GitHub User")
         avatar = profile.get("avatar_url")
 
-        # GitHub puede no devolver email si es privado
-        email = profile.get("email")
-        if not email:
-            email = await OAuthService._get_github_primary_email(access_token)
+        # El email del perfil no indica si está verificado: se usa siempre el
+        # de /user/emails marcado como verified (la cuenta se vincula por email).
+        email = await OAuthService._get_github_primary_email(access_token)
 
         if not provider_id:
             raise OAuthError("Perfil de GitHub incompleto (falta id)")
 
         if not email:
             raise OAuthError(
-                "No se pudo obtener el email de GitHub. "
-                "Por favor configura un email público en tu cuenta de GitHub."
+                "GitHub no devolvió ningún email verificado para esta cuenta"
             )
 
         # 3. Buscar o crear usuario en MySQL
@@ -294,8 +299,7 @@ class OAuthService:
             db=db
         )
 
-        # 4. Generar tokens
-        return OAuthService._generate_jwt(user)
+        return user
 
     @staticmethod
     async def _exchange_github_code(code: str, redirect_uri: str) -> Optional[str]:
@@ -345,7 +349,6 @@ class OAuthService:
         """
         Obtiene el email primario verificado de GitHub.
 
-        Se usa cuando el email del perfil es privado/nulo.
         Busca el email marcado como primary=True y verified=True.
         """
         async with httpx.AsyncClient() as client:
@@ -613,6 +616,11 @@ class OAuthError(Exception):
 
     Se captura en las rutas y convierte a HTTPException 400.
     """
+    pass
+
+
+class OAuthEmailNotVerifiedError(OAuthError):
+    """El proveedor no garantiza que el email pertenezca al usuario."""
     pass
 
 
