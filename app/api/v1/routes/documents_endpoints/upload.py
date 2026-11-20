@@ -249,7 +249,7 @@ async def upload_documents(
             logging.exception(
                 f"[Correlation ID: {correlation_id}] Unexpected error processing file {file.filename}: {str(e)}"
             )
-            return {"filename": file.filename, "error": str(e)}
+            return {"filename": file.filename, "error": "Error procesando el archivo"}
 
     # Procesamiento SECUENCIAL (recomendado para confiabilidad)
     for idx, file in enumerate(files):

@@ -172,7 +172,7 @@ class DocumentProcessor:
                     results["errors"].append({
                         "doc_id": doc.id,
                         "filename": doc.filename,
-                        "error": str(e)
+                        "error": "Error al indexar el documento"
                     })
                     logger.warning(f"Bulk processing: skipped document {doc.id}: {e}")
                 else:

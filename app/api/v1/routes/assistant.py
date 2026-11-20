@@ -189,7 +189,7 @@ def ask_Curim(
         logger.exception(f"Error procesando pregunta para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error procesando pregunta: {str(e)}"
+            detail="Error procesando pregunta"
         )
 
 
@@ -298,7 +298,7 @@ def get_conversation_history(
         logger.exception(f"Error obteniendo historial para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo historial: {str(e)}"
+            detail="Error obteniendo historial"
         )
 
 
@@ -383,7 +383,7 @@ def sync_documents(
         logger.exception(f"Error sincronizando documentos para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error sincronizando documentos: {str(e)}"
+            detail="Error sincronizando documentos"
         )
 
 
@@ -443,7 +443,7 @@ def get_Curim_status(
         logger.exception(f"Error obteniendo estado para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estado: {str(e)}"
+            detail="Error obteniendo estado"
         )
 
 
@@ -479,7 +479,7 @@ def clear_cache(
         logger.exception(f"Error limpiando caché para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error limpiando caché: {str(e)}"
+            detail="Error limpiando caché"
         )
 
 
@@ -527,7 +527,7 @@ def get_cache_stats(
         logger.exception(f"Error obteniendo estadísticas de caché para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estadísticas: {str(e)}"
+            detail="Error obteniendo estadísticas"
         )
 
 
@@ -650,7 +650,7 @@ async def text_to_speech(
         logger.exception(f"Error generando TTS para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generando audio: {str(e)}"
+            detail="Error generando audio"
         )
 
 
@@ -726,5 +726,5 @@ async def get_available_voices(
         logger.exception(f"Error obteniendo voces disponibles: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo voces: {str(e)}"
+            detail="Error obteniendo voces"
         )
