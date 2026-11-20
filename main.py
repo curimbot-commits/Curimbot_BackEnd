@@ -34,7 +34,8 @@ from app.api.v1.routes.voice_endpoints import router as voice_router
 from app.services.Curim.voice_rag_service import get_rag_engine
 from app.core.config import settings
 from app.core.init_roles import init_roles
-from app.db.database import Base, SessionLocal, engine
+from app.db.database import SessionLocal, engine
+from app.db.migrations import upgrade_to_head
 from app.api.v1.routes.oauth_routes import router as oauth_router
 
 load_dotenv()
@@ -75,11 +76,11 @@ ALLOWED_ORIGINS = [
 
 def ensure_database() -> None:
     """
-    Para producción: crea tablas solo si no existen.
+    Aplica las migraciones de Alembic pendientes y crea los roles base.
+    Alembic es la única fuente del esquema (ya no se usa create_all).
     No elimina datos existentes.
     """
-    Base.metadata.create_all(bind=engine)
-    logger.info("Schema verificado/creado")
+    upgrade_to_head()
 
     with SessionLocal() as db:
         init_roles(db)

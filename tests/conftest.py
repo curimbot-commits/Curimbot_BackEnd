@@ -33,15 +33,19 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 _url = make_url(TEST_DB_URL)
 _server_engine = create_engine(_url.set(database=""))
+assert _url.database.endswith("_test"), "Abortado: no es la BD de tests"
 with _server_engine.connect() as conn:
-    conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{_url.database}` CHARACTER SET utf8mb4"))
+    # Se recrea vacía en cada ejecución: el esquema lo crean las migraciones
+    conn.execute(text(f"DROP DATABASE IF EXISTS `{_url.database}`"))
+    conn.execute(text(f"CREATE DATABASE `{_url.database}` CHARACTER SET utf8mb4"))
 _server_engine.dispose()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 from app.core.init_roles import init_roles  # noqa: E402
-from app.db.database import Base, SessionLocal, engine  # noqa: E402
+from app.db.database import SessionLocal, engine  # noqa: E402
+from app.db.migrations import upgrade_to_head  # noqa: E402
 from app.models.auth_models import Role, User  # noqa: E402
 from app.services import security_service  # noqa: E402
 
@@ -51,8 +55,7 @@ TEST_PASSWORD = "Sup3r-Secret-Pass!"
 @pytest.fixture(scope="session", autouse=True)
 def _schema():
     assert engine.url.database.endswith("_test"), "Abortado: no es la BD de tests"
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    upgrade_to_head()  # valida la migración en cada ejecución
     with SessionLocal() as db:
         init_roles(db)
         db.commit()

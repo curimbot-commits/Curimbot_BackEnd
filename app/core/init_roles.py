@@ -25,7 +25,7 @@ Notas de seguridad:
 """
 
 from sqlalchemy.orm import Session
-from app.db.database import SessionLocal, engine, Base
+from app.db.database import SessionLocal
 from app.models.models import Role
 import logging
 
@@ -158,7 +158,7 @@ def main():
         4. Cerrar sesión correctamente
     
     Operaciones:
-        - **Base.metadata.create_all()**: Crea tablas si no existen
+        - **upgrade_to_head()**: Aplica migraciones de Alembic pendientes
             - Lee definiciones de modelos
             - Crea tablas en BD
             - Crea índices y constrains
@@ -223,14 +223,13 @@ def main():
         - Admininstrador debe crearse manualmente primero
     
     Consideraciones de producción:
-        - Usar Alembic para migrations en lugar de create_all
         - Versionar cambios de schema
         - Hacer backup de BD antes de cambios
         - Usar transacciones si hay múltiples inicializaciones
     """
-    # Crear todas las tablas definidas en los modelos
-    # Si ya existen, no las recrea (idempotente)
-    Base.metadata.create_all(bind=engine)
+    # Aplicar migraciones de Alembic (única fuente del esquema)
+    from app.db.migrations import upgrade_to_head
+    upgrade_to_head()
     
     # Abrir sesión de base de datos
     db = SessionLocal()

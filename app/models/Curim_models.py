@@ -13,7 +13,7 @@ def utc_now():
 
 class CurimConversation(Base, TimestampMixin):
     """Conversaciones con el asistente Curim."""
-    __tablename__ = "Curim_conversations"
+    __tablename__ = "curim_conversations"
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -29,10 +29,10 @@ class CurimConversation(Base, TimestampMixin):
 
 class CurimMessage(Base):
     """Mensajes individuales de una conversación."""
-    __tablename__ = "Curim_messages"
+    __tablename__ = "curim_messages"
     
     id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("Curim_conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    conversation_id = Column(Integer, ForeignKey("curim_conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     
@@ -56,7 +56,7 @@ class CurimMessage(Base):
 
 class CurimDocumentIndex(Base, TimestampMixin):
     """Tracking de documentos indexados en Curim."""
-    __tablename__ = "Curim_document_index"
+    __tablename__ = "curim_document_index"
     
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)

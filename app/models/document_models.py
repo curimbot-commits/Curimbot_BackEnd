@@ -110,7 +110,7 @@ class AIInteractionLog(Base):
 
     conversation_id = Column(
         Integer,
-        ForeignKey("Curim_conversations.id", ondelete="SET NULL"),
+        ForeignKey("curim_conversations.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
