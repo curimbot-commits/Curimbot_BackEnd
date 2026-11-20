@@ -715,6 +715,17 @@ Respuesta:"""
     # INDEXACIÓN
     # ============================================================
 
+    def delete_document_chunks(self, document_id: int) -> None:
+        """Elimina del vector store todos los fragmentos de un documento."""
+        try:
+            self.vectorstore.delete(where={"document_id": document_id})
+            logger.info(f"Fragmentos del documento {document_id} eliminados del índice")
+        except Exception as e:
+            # Chroma lanza si no hay nada que borrar en algunas versiones
+            logger.debug(f"Sin fragmentos para documento {document_id}: {e}")
+        for k in [k for k in self.context_cache if str(document_id) in k]:
+            self.context_cache.pop(k, None)
+
     def index_document(self, document) -> int:
         """
         Indexa documento en el vector store.

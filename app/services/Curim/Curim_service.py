@@ -28,6 +28,24 @@ from app.services.Curim.voice_rag_service import get_rag_engine
 from app.services.handlers.log_activity import LogAIInteractionHandler
 
 
+def accessible_documents(
+    db: Session,
+    user_id: int,
+    document_ids: Optional[List[int]] = None,
+) -> List[Document]:
+    """
+    Documentos en los que el asistente (texto y voz) puede buscar para un
+    usuario: los suyos y los públicos (los que sube un admin). Misma regla
+    que la descarga de documentos.
+    """
+    query = db.query(Document).filter(
+        (Document.uploaded_by == user_id) | (Document.is_public == 1)
+    )
+    if document_ids:
+        query = query.filter(Document.id.in_(document_ids))
+    return query.all()
+
+
 class CurimService:
     """
     Servicio principal de Curim.
@@ -170,13 +188,7 @@ class CurimService:
         user_id: int,
         document_ids: Optional[List[int]] = None,
     ) -> List[Document]:
-        query = db.query(Document).filter(
-            (Document.uploaded_by == user_id)
-            | (Document.is_public == 1)
-        )
-        if document_ids:
-            query = query.filter(Document.id.in_(document_ids))
-        return query.all()
+        return accessible_documents(db, user_id, document_ids)
 
     def _save_to_history(
         self,
@@ -244,7 +256,8 @@ class CurimService:
             answer=answer,
             channel=AIChannel.text,
             confidence=confidence,
-            status=AIInteractionStatus.success,
+            # Sin fuentes = no se encontró contexto en los documentos
+            status=AIInteractionStatus.success if sources else AIInteractionStatus.no_context,
             sources=sources,
             sources_info=sources_info,
             processing_time_ms=int(processing_time_ms),
@@ -455,3 +468,25 @@ class CurimService:
         else:
             self.semantic_cache.cache = {}
             self.semantic_cache._save_cache()
+
+    def on_document_deleted(self, document_id: int) -> None:
+        """
+        Quita los fragmentos del documento del índice y vacía las cachés de
+        respuestas (un documento público afecta a todos los usuarios).
+        """
+        self.rag_engine.delete_document_chunks(document_id)
+        self.clear_all_cache()
+
+    def on_documents_indexed(self) -> None:
+        """Tras indexar documentos nuevos, las respuestas cacheadas quedan obsoletas."""
+        self.clear_all_cache()
+
+_curim_service: Optional[CurimService] = None
+
+
+def get_curim_service() -> CurimService:
+    """Instancia única: una sola caché exacta y semántica para toda la app."""
+    global _curim_service
+    if _curim_service is None:
+        _curim_service = CurimService()
+    return _curim_service

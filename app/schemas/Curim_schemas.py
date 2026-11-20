@@ -11,6 +11,10 @@ class CurimQueryRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000, description="Pregunta del usuario")
     document_ids: Optional[List[int]] = Field(default=None, description="IDs de documentos específicos (opcional)")
     use_cache: bool = Field(default=True, description="Usar caché de respuestas")
+    conversation_id: Optional[int] = Field(
+        default=None,
+        description="Conversación a continuar (None = nueva). Debe ser del usuario.",
+    )
     
     class Config:
         json_schema_extra = {

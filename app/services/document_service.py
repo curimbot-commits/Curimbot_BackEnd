@@ -655,6 +655,16 @@ class DocumentService:
                 db.delete(doc)
                 db.commit()
 
+                # Quitar sus fragmentos del índice RAG y vaciar cachés de
+                # respuestas: si no, el asistente seguiría usando el contenido
+                # borrado. Si falla, el documento ya está borrado y la búsqueda
+                # filtra por documentos existentes; solo se registra.
+                try:
+                    from app.services.Curim.Curim_service import get_curim_service
+                    get_curim_service().on_document_deleted(doc_id)
+                except Exception as e:
+                    logging.warning(f"No se pudo limpiar el índice del documento {doc_id}: {e}")
+
             except IntegrityError:
                 db.rollback()
                 raise HTTPException(

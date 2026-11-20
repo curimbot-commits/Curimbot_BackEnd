@@ -27,7 +27,7 @@ def test_assistant_query_works_from_threadpool(client, make_user, monkeypatch):
 
     captured = {}
 
-    def fake_ask(db, user, question, document_ids, use_cache):
+    def fake_ask(db, user, question, document_ids, use_cache, conversation_id=None):
         captured["question"] = question
         return {
             "answer": "respuesta", "sources": [], "confidence": 0.9,

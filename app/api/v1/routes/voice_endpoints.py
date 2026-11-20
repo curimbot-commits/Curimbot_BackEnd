@@ -66,6 +66,10 @@ class ContextResponse(BaseModel):
         False,
         description="True si se encontró contexto relevante"
     )
+    sources_info: List[dict] = Field(
+        default_factory=list,
+        description="Documentos usados: [{document_id, filename}] (para el historial)"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -140,7 +144,7 @@ def get_voice_context(
     """
     try:
         rag = get_voice_rag_service()
-        context = rag.retrieve_context(
+        context, sources_info = rag.retrieve_context_with_sources(
             query=request.query,
             user_id=current_user.id,
             db=db,
@@ -149,6 +153,7 @@ def get_voice_context(
         return ContextResponse(
             context=context,
             found=context is not None,
+            sources_info=sources_info,
         )
 
     except Exception as e:
