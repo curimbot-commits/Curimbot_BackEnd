@@ -332,25 +332,28 @@ class AuthService:
                 .first()
             )
 
-            if session:
-                last_active = session.last_active
-                if last_active.tzinfo is None:
-                    last_active = last_active.replace(tzinfo=timezone.utc)
+            # Todo token emitido por login/2FA/OAuth/refresh tiene sesión;
+            # sin ella (sesión revocada o eliminada) el token no autentica.
+            if not session:
+                raise TokenExpiredError("Sesión no encontrada")
 
-                inactivity_limit = datetime.now(timezone.utc) - timedelta(
-                    minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES
+            last_active = session.last_active
+            if last_active.tzinfo is None:
+                last_active = last_active.replace(tzinfo=timezone.utc)
+
+            inactivity_limit = datetime.now(timezone.utc) - timedelta(
+                minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES
+            )
+
+            if not session.is_active or last_active < inactivity_limit:
+                if session.is_active:
+                    session.is_active = False
+                    db.commit()
+                raise TokenExpiredError(
+                    "Sesión expirada por inactividad"
                 )
 
-                if not session.is_active or last_active < inactivity_limit:
-                    if session.is_active:
-                        session.is_active = False
-                        db.commit()
-                    raise TokenExpiredError(
-                        "Sesión expirada por inactividad"
-                    )
-
-                if payload.get("type") == "access":
-                    SessionService.update_session_activity(jti, db)
+            SessionService.update_session_activity(jti, db)
 
             return payload
 
@@ -376,6 +379,10 @@ class AuthService:
 
         Returns:
             `True` si el token está revocado, `False` en caso contrario.
+
+        Raises:
+            SQLAlchemyError: si la consulta falla. Se propaga a propósito
+            (fail-closed): ante la duda, un token no se considera válido.
         """
         if not jti:
             return False
@@ -388,7 +395,7 @@ class AuthService:
             )
         except SQLAlchemyError as exc:
             logger.error("Error al consultar lista negra de tokens: %s", exc)
-            return False
+            raise
 
     @staticmethod
     def get_user_from_token(token: str, db: Session) -> User:

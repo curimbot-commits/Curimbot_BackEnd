@@ -141,3 +141,52 @@ def test_login_with_2fa_bad_codes_lock_the_account(client, make_user, db):
     db.refresh(user)
     assert user.failed_attempts >= 5
     assert user.locked_until is not None
+
+
+# ── Sesiones y lista negra ──────────────────────────────────────────────────
+
+def test_access_token_without_active_session_is_rejected(client, make_user):
+    """Un access token firmado pero sin sesión registrada no autentica."""
+    from app.services import security_service
+
+    user = make_user()
+    orphan = security_service.create_access_token({"sub": str(user.id)})
+    assert client.get("/auth/me", headers=_bearer(orphan)).status_code == 401
+
+
+def test_revoked_session_token_is_rejected(client, make_user, db):
+    from app.models.auth_models import ActiveSession
+
+    user = make_user()
+    access = login(client, user.email).json()["access_token"]
+    client.cookies.clear()
+    db.query(ActiveSession).filter(ActiveSession.user_id == user.id).update({"is_active": False})
+    db.commit()
+    assert client.get("/auth/me", headers=_bearer(access)).status_code == 401
+
+
+def test_blacklist_check_fails_closed_on_db_error():
+    """Si la BD falla al consultar la lista negra, el token NO se da por válido."""
+    import pytest
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.auth_service import AuthService
+
+    class BrokenDB:
+        def query(self, *a, **k):
+            raise OperationalError("SELECT", {}, Exception("db caída"))
+
+    with pytest.raises(Exception):
+        AuthService.is_token_blacklisted("algun-jti", BrokenDB())
+
+
+def test_cleanup_expired_reset_tokens_requires_admin(client, make_user):
+    client.cookies.clear()
+    assert client.delete("/password-reset/cleanup-expired").status_code == 401
+    user = make_user()
+    login(client, user.email)
+    assert client.delete("/password-reset/cleanup-expired").status_code == 403
+    client.cookies.clear()
+    admin = make_user("admin")
+    login(client, admin.email)
+    assert client.delete("/password-reset/cleanup-expired").status_code == 200
