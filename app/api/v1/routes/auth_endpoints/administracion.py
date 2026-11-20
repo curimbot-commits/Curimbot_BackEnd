@@ -5,6 +5,7 @@ Endpoints para gestión de usuarios (listar, cambiar rol, activar/desactivar)
 y estadísticas de inicio de sesión. Todos requieren privilegios de administrador.
 """
 
+from sqlalchemy.orm import joinedload
 import logging
 from datetime import datetime, timezone
 from typing import List
@@ -83,7 +84,10 @@ def get_all_users(
                 detail="Limit debe estar entre 1 y 100"
             )
 
-        query = db.query(User)
+        query = (
+            db.query(User)
+            .options(joinedload(User.preferences))  
+        )
         if active_only:
             query = query.filter(User.is_active == True)
 
@@ -94,11 +98,12 @@ def get_all_users(
                 id=user.id,
                 email=user.email,
                 name=user.name,
-                role=user.role.name,
+                role=user.role.name,                       
                 created_at=user.created_at,
                 last_login=user.last_login,
                 is_active=user.is_active,
-                two_factor_enabled=user.two_factor_enabled
+                two_factor_enabled=user.two_factor_enabled,
+                profile_photo_url=user.profile_photo_url, 
             )
             for user in users
         ]
@@ -280,43 +285,6 @@ def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
         )
-
-@router.delete("/{session_id}", tags=["sessions"], summary="Revocar sesión (Legacy/Compatibilidad)")
-def revoke_session_legacy(
-    session_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Punto de refinamiento Phase 2.
-    Resuelve el error 404 cuando el frontend llama a DELETE /auth/{id}.
-    Si el usuario es Admin, intenta eliminar al usuario con ese ID si no es una sesión válida.
-    """
-    try:
-        # 1. Intentar revocar sesión
-        return SessionService.revoke_session(
-            session_id=session_id,
-            user_id=current_user.id,
-            db=db,
-            requester_user_id=current_user.id
-        )
-    except HTTPException as e:
-        # 2. Si falla con 404 y es ADMIN, intentar eliminar usuario
-        if e.status_code == 404 and current_user.role == "admin":
-            try:
-                AuthService.delete_user(current_user, session_id, db)
-                return Response(status_code=status.HTTP_204_NO_CONTENT)
-            except Exception:
-                # Si fallan ambos, propagar el 404 original
-                raise e
-        raise e
-    except Exception as e:
-        logger.error(f"Error en ruta legacy /auth/{session_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error interno del servidor"
-        )
-
 
 @router.get("/users/{user_id}/login-stats", response_model=LoginStatsResponse)
 def get_user_login_stats(

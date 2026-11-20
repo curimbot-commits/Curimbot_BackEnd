@@ -34,7 +34,8 @@ from app.api.v1.routes.voice_endpoints import router as voice_router
 from app.services.Curim.voice_rag_service import get_rag_engine
 from app.core.config import settings
 from app.core.init_roles import init_roles
-from app.db.database import Base, SessionLocal, engine
+from app.db.database import SessionLocal, engine
+from app.db.migrations import upgrade_to_head
 from app.api.v1.routes.oauth_routes import router as oauth_router
 
 load_dotenv()
@@ -51,6 +52,9 @@ logger = logging.getLogger("curim")
 # ─────────────────────────────────────────────
 # Validación de configuración temprana
 # ─────────────────────────────────────────────
+# En producción una configuración insegura detiene el arranque (fail-fast).
+settings.validate_production()
+
 try:
     settings.validate_Curim()
 except ValueError as e:
@@ -72,11 +76,11 @@ ALLOWED_ORIGINS = [
 
 def ensure_database() -> None:
     """
-    Para producción: crea tablas solo si no existen.
+    Aplica las migraciones de Alembic pendientes y crea los roles base.
+    Alembic es la única fuente del esquema (ya no se usa create_all).
     No elimina datos existentes.
     """
-    Base.metadata.create_all(bind=engine)
-    logger.info("Schema verificado/creado")
+    upgrade_to_head()
 
     with SessionLocal() as db:
         init_roles(db)
@@ -183,8 +187,10 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Documentación interactiva solo fuera de producción.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 # ─────────────────────────────────────────────
@@ -215,7 +221,7 @@ app.add_middleware(
     secret_key=settings.SECRET_KEY,
     session_cookie="curim_session",
     same_site="lax",             # Permite cookies en redirects OAuth (cross-site GET)
-    https_only=False,            # False en desarrollo local (HTTP). Cambiar a True en producción
+    https_only=settings.COOKIE_SECURE,  # True en producción (HTTPS), False en local
     max_age=300,                 # 5 minutos: suficiente para completar el flujo OAuth
 )
 
@@ -239,7 +245,7 @@ def root():
         "status": "ok",
         "service": "Curim Asistente Documental",
         "version": "1.0.0",
-        "docs": "/docs",
+        "docs": None if settings.is_production else "/docs",
     }
 
 

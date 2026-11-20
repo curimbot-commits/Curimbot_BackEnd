@@ -73,18 +73,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-# =========================================================
-# INICIALIZACIÓN DE BASE DE DATOS
-# =========================================================
-
-def init_db():
-    """
-    Crea todas las tablas definidas en los modelos.
-
-    IMPORTANTE: En producción usar Alembic para migraciones.
-    Esta función no elimina datos existentes.
-    """
-    from app.models import models
-    Base.metadata.create_all(bind=engine)

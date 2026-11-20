@@ -24,6 +24,7 @@ Componentes:
 import io
 import edge_tts
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.rate_limit import rate_limit
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -70,8 +71,8 @@ def get_db():
 # ENDPOINTS - CONSULTAS
 # ===========================
 
-@router.post("/query", response_model=CurimResponse)
-async def ask_Curim(
+@router.post("/query", response_model=CurimResponse, dependencies=[Depends(rate_limit(30, 60))])
+def ask_Curim(
     request: CurimQueryRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -188,12 +189,12 @@ async def ask_Curim(
         logger.exception(f"Error procesando pregunta para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error procesando pregunta: {str(e)}"
+            detail="Error procesando pregunta"
         )
 
 
 @router.get("/history", response_model=List[ConversationHistory])
-async def get_conversation_history(
+def get_conversation_history(
     conversation_id: Optional[int] = None,
     limit: int = 50,
     current_user: User = Depends(get_current_user),
@@ -297,7 +298,7 @@ async def get_conversation_history(
         logger.exception(f"Error obteniendo historial para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo historial: {str(e)}"
+            detail="Error obteniendo historial"
         )
 
 
@@ -306,7 +307,7 @@ async def get_conversation_history(
 # ===========================
 
 @router.post("/documents/sync", response_model=DocumentSyncResponse)
-async def sync_documents(
+def sync_documents(
     request: DocumentSyncRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -382,7 +383,7 @@ async def sync_documents(
         logger.exception(f"Error sincronizando documentos para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error sincronizando documentos: {str(e)}"
+            detail="Error sincronizando documentos"
         )
 
 
@@ -391,7 +392,7 @@ async def sync_documents(
 # ===========================
 
 @router.get("/status", response_model=CurimStatus)
-async def get_Curim_status(
+def get_Curim_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -442,12 +443,12 @@ async def get_Curim_status(
         logger.exception(f"Error obteniendo estado para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estado: {str(e)}"
+            detail="Error obteniendo estado"
         )
 
 
 @router.delete("/cache")
-async def clear_cache(
+def clear_cache(
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -478,12 +479,12 @@ async def clear_cache(
         logger.exception(f"Error limpiando caché para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error limpiando caché: {str(e)}"
+            detail="Error limpiando caché"
         )
 
 
 @router.get("/cache/stats")
-async def get_cache_stats(
+def get_cache_stats(
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -526,7 +527,7 @@ async def get_cache_stats(
         logger.exception(f"Error obteniendo estadísticas de caché para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo estadísticas: {str(e)}"
+            detail="Error obteniendo estadísticas"
         )
 
 
@@ -534,7 +535,7 @@ async def get_cache_stats(
 # ENDPOINTS - TEXT TO SPEECH
 # ===========================
 
-@router.post("/tts")
+@router.post("/tts", dependencies=[Depends(rate_limit(20, 60))])
 async def text_to_speech(
     request: dict,
     current_user: User = Depends(get_current_user)
@@ -649,7 +650,7 @@ async def text_to_speech(
         logger.exception(f"Error generando TTS para usuario {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generando audio: {str(e)}"
+            detail="Error generando audio"
         )
 
 
@@ -725,5 +726,5 @@ async def get_available_voices(
         logger.exception(f"Error obteniendo voces disponibles: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error obteniendo voces: {str(e)}"
+            detail="Error obteniendo voces"
         )

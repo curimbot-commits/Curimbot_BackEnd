@@ -68,7 +68,6 @@ logs/
 static/
 
 # Production Exclusions
-tests/
 diagnostic_imports.py
 pytest_error.log
 .pytest_cache/
@@ -91,3 +90,7 @@ diagnostic_imports.py
 storage/
 uploads/
 test_oauth_session.py
+# Claves de cifrado: nunca versionar (en producción usar la variable ENC_KEY)
+enc.key
+app/enc.key
+*.key

@@ -12,7 +12,7 @@ class UpdatePasswordHandler(ChangePasswordHandler):
 
     def _handle(self, context: ChangePasswordContext):
         # Reemplaza el hash de la contraseña actual con el hash de la nueva contraseña
-        context.current_user.password_hash = security_service.get_password_hash(context.new_password)
+        context.current_user.password_hash = security_service.hash_password(context.new_password)
         
         # Guarda los cambios en la base de datos
         context.db.commit()

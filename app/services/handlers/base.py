@@ -181,27 +181,13 @@ class DocumentContext:
     """
     
     def __init__(
-        self, 
-        filename: str, 
-        content: bytes, 
-        user, 
-        db, 
+        self,
+        filename: str,
+        content: bytes,
+        user,
+        db,
         mimetype: str = None
     ):
-        """
-        Inicializar contexto de documento.
-        
-        Args:
-            filename (str): Nombre del archivo
-            content (bytes): Contenido del archivo
-            user: Usuario propietario
-            db: Sesión de BD
-            mimetype (str): Tipo MIME opcional
-        
-        Raises:
-            ValueError: Si algún parámetro es inválido
-        """
-        # Validaciones
         if not filename or not isinstance(filename, str):
             raise ValueError("filename inválido en DocumentContext")
         if not isinstance(content, bytes):
@@ -210,23 +196,29 @@ class DocumentContext:
             raise ValueError("user inválido en DocumentContext")
         if not db:
             raise ValueError("db inválido en DocumentContext")
-        
-        # Campos de entrada
+
+        # Entrada
         self.filename = filename
         self.content = content
         self.user = user
         self.db = db
         self.mimetype = mimetype
-        
-        # Campos de procesamiento (llenados por handlers)
+
+        # Procesamiento
         self.document = None
         self.text = None
         self.file_type = None
         self.encrypted_content = None
         self.extension = None
         self.size = len(content) if content else 0
-        
-        # Campos Curim
+
+        # Opcionales (antes asignados dinámicamente)
+        self.file = None
+        self.nlp_data = None
+        self.correlation_id = None
+        self.handler_execution_count = {}
+
+        # Curim
         self.Curim_indexed = False
         self.Curim_chunks = 0
         self.Curim_error = None
@@ -332,9 +324,6 @@ class DocumentHandler(ABC):
         key = f"{correlation_id}:{handler_name}"
         
         # Inicializar contador en contexto si no existe
-        if not hasattr(context, 'handler_execution_count'):
-            context.handler_execution_count = {}
-        
         if key not in context.handler_execution_count:
             context.handler_execution_count[key] = 0
         

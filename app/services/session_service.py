@@ -13,6 +13,21 @@ from jose import jwt
 logger = logging.getLogger(__name__)
 
 
+
+def _blacklist_session_tokens(session: ActiveSession, db: Session) -> None:
+    """
+    Añade a la blacklist el access y el refresh token de una sesión.
+    Caducan como mucho con la sesión (expires_at); hasta entonces se guardan.
+    """
+    for jti in (session.access_token_jti, session.refresh_token_jti):
+        exists = db.query(BlacklistedToken.id).filter(BlacklistedToken.jti == jti).first()
+        if not exists:
+            db.add(BlacklistedToken(
+                jti=jti,
+                expires_at=session.expires_at,
+                blacklisted_at=datetime.now(timezone.utc),
+            ))
+
 class SessionService:
     """Servicio para gestionar sesiones activas de usuarios"""
     
@@ -298,17 +313,7 @@ class SessionService:
                 )
             
             # Agregar tokens a blacklist
-            blacklist_access = BlacklistedToken(
-                token=session.access_token_jti,
-                blacklisted_at=datetime.now(timezone.utc)
-            )
-            blacklist_refresh = BlacklistedToken(
-                token=session.refresh_token_jti,
-                blacklisted_at=datetime.now(timezone.utc)
-            )
-            
-            db.add(blacklist_access)
-            db.add(blacklist_refresh)
+            _blacklist_session_tokens(session, db)
             
             # Eliminar sesión
             db.delete(session)
@@ -359,8 +364,7 @@ class SessionService:
             
             # Agregar tokens a blacklist
             for session in sessions:
-                db.add(BlacklistedToken(token=session.access_token_jti, blacklisted_at=datetime.now(timezone.utc)))
-                db.add(BlacklistedToken(token=session.refresh_token_jti, blacklisted_at=datetime.now(timezone.utc)))
+                _blacklist_session_tokens(session, db)
                 db.delete(session)
             
             db.commit()

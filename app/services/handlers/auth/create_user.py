@@ -1,7 +1,11 @@
+import logging
+
 from app.services import security_service
 from app.models import models
 from fastapi import HTTPException
 from app.services.handlers.base import SignupContext, SignupHandler
+
+logger = logging.getLogger(__name__)
 
 
 class CreateUserHandler(SignupHandler):
@@ -28,7 +32,7 @@ class CreateUserHandler(SignupHandler):
         new_user = models.User(
             name=context.user_data.name,
             email=context.user_data.email.lower(),
-            password_hash=security_service.get_password_hash(context.user_data.password),
+            password_hash=security_service.hash_password(context.user_data.password),
             role_id=role.id  # Usar role_id en lugar de role
         )
         context.db.add(new_user)
@@ -37,6 +41,7 @@ class CreateUserHandler(SignupHandler):
             context.db.refresh(new_user)
         except Exception as e:
             context.db.rollback()
-            raise HTTPException(status_code=500, detail=f"Error al crear el usuario: {str(e)}")
+            logger.exception(f"Error al crear el usuario: {e}")
+            raise HTTPException(status_code=500, detail="Error al crear el usuario")
 
         context.new_user = new_user

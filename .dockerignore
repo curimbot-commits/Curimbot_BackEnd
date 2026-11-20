@@ -1,0 +1,24 @@
+# Secretos: se inyectan como variables de entorno en el despliegue
+.env
+*.key
+enc.key
+app/enc.key
+
+# Datos locales
+storage/
+uploads/
+*.db
+*.sqlite3
+
+# Entorno y herramientas
+.git/
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+tests/
+test_oauth_session.py
+*.log

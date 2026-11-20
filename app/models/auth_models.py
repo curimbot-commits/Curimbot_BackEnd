@@ -1,3 +1,4 @@
+from app.core.config import settings
 from typing import Optional
 from sqlalchemy import (
     Boolean, Column, Integer, String, Text, DateTime,
@@ -6,6 +7,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from .base import Base, TimestampMixin
 
@@ -57,16 +59,25 @@ class User(Base, TimestampMixin):
 
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
     logs = relationship("Log", back_populates="user")
-    activities = relationship("ActivityLog", back_populates="user")
+    ai_interactions = relationship("AIInteractionLog", back_populates="user", cascade="all, delete-orphan")
     preferences = relationship("UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan")
     login_alerts = relationship("LoginAlert", back_populates="user", cascade="all, delete-orphan")
     active_sessions = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
     reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("NotificationHistory", back_populates="user", cascade="all, delete-orphan")
     Curim_conversations = relationship("CurimConversation", back_populates="user")
+    
+
+    @property
+    def profile_photo_url(self) -> Optional[str]:
+        return self.preferences.profile_photo_url if self.preferences else None
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role.name})>"
+    
+    @property
+    def role_name(self) -> str:
+        return self.role.name if self.role else ""
 
     @property
     def is_admin(self) -> bool:

@@ -18,6 +18,8 @@ Características:
 
 import io
 import logging
+import re
+from urllib.parse import quote
 from fastapi import Depends, HTTPException, Request, APIRouter
 from fastapi.responses import StreamingResponse
 
@@ -27,6 +29,20 @@ from app.db.crud import crud
 from app.db.database import SessionLocal, get_db
 from app.services import storage_service
 from app.services.document_service import DocumentService
+
+
+def content_disposition(filename: str) -> str:
+    """
+    Content-Disposition seguro (RFC 6266 / RFC 5987).
+
+    - filename*: nombre completo percent-encoded en UTF-8 (navegadores modernos).
+    - filename: respaldo ASCII sin comillas, barras ni caracteres de control.
+    Evita romper la cabecera con ;, comillas, saltos de línea o caracteres
+    no latin-1 (que provocaban un 500).
+    """
+    name = filename or "documento"
+    fallback = re.sub(r'[^A-Za-z0-9._ -]', "_", name).strip() or "documento"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -229,7 +245,11 @@ def download_document(
         headers = {
             # RFC 6266: Content-Disposition con UTF-8 encoding
             # Permite nombres con caracteres especiales
-            "Content-Disposition": f"attachment; filename*=UTF-8''{doc.filename}",
+            "Content-Disposition": content_disposition(doc.filename),
+
+            # El mimetype lo declara quien sube el archivo: no dejar que el
+            # navegador lo reinterprete (p. ej. como HTML)
+            "X-Content-Type-Options": "nosniff",
             
             # Tamaño exacto del archivo para barra de progreso
             "Content-Length": str(len(raw_data)),

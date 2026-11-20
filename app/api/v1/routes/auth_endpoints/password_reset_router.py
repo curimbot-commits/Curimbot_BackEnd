@@ -24,6 +24,7 @@ Security Features:
 import logging
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.rate_limit import rate_limit
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -39,6 +40,7 @@ from app.schemas.password_reset_schemas import (
 from app.services.email_service import EmailService
 from app.services.notification_service import NotificationService
 from app.services.password_reset_service import PasswordResetService
+from app.services.auth_service import require_admin
 
 # Cargar variables de entorno
 load_dotenv()
@@ -60,7 +62,7 @@ password_reset_service = PasswordResetService(
 )
 
 
-@router.post("/request", response_model=PasswordResetResponse, status_code=status.HTTP_200_OK)
+@router.post("/request", response_model=PasswordResetResponse, status_code=status.HTTP_200_OK, dependencies=[Depends(rate_limit(5, 60))])
 def request_password_reset(
     request_data: PasswordResetRequest,
     db: Session = Depends(get_db)
@@ -134,7 +136,7 @@ def request_password_reset(
         )
 
 
-@router.post("/verify-token", response_model=TokenValidationResponse)
+@router.post("/verify-token", response_model=TokenValidationResponse, dependencies=[Depends(rate_limit(10, 60))])
 def verify_reset_token(
     verify_data: PasswordResetVerify,
     db: Session = Depends(get_db)
@@ -217,7 +219,7 @@ def verify_reset_token(
         )
 
 
-@router.post("/reset", response_model=PasswordResetResponse)
+@router.post("/reset", response_model=PasswordResetResponse, dependencies=[Depends(rate_limit(10, 60))])
 def reset_password(
     reset_data: PasswordResetConfirm,
     db: Session = Depends(get_db)
@@ -304,7 +306,8 @@ def reset_password(
 
 @router.delete("/cleanup-expired")
 def cleanup_expired_tokens(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
 ):
     """
     Limpiar tokens de recuperación expirados de la base de datos.
@@ -345,7 +348,7 @@ def cleanup_expired_tokens(
         }
     
     Notes:
-        - Este endpoint debería protegerse con autenticación de admin
+        - Requiere rol de administrador
         - Considerar implementar soft-delete para auditoría
         - Ejecutar durante horas de bajo tráfico si hay muchos tokens
         - Los tokens activos (< 1 hora) nunca se eliminan
@@ -370,7 +373,7 @@ def cleanup_expired_tokens(
         )
 
 
-@router.get("/check-email")
+@router.get("/check-email", dependencies=[Depends(rate_limit(10, 60))])
 def check_email_exists(email: str, db: Session = Depends(get_db)):
     """
     Verificar si un correo electrónico está registrado en el sistema.

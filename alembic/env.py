@@ -29,13 +29,10 @@ load_dotenv()
 
 from app.models.models import Base  
 
-# Sobrescribir la URL de la base de datos si existe en el entorno
-database_url = os.getenv("DATABASE_URL")
-if database_url:
-    # Asegurarse de que la URL sea compatible con Alembic (mysql+pymysql)
-    if database_url.startswith("mysql://"):
-        database_url = database_url.replace("mysql://", "mysql+pymysql://", 1)
-    context.config.set_main_option("sqlalchemy.url", database_url)
+# Usar la misma URL que la app, sin depender de DATABASE_URL en el entorno
+from app.core.config import settings
+# configparser interpreta "%": se escapa por si la contraseña lo contiene
+context.config.set_main_option("sqlalchemy.url", settings.get_database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
@@ -85,7 +82,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
         )
 
         with context.begin_transaction():

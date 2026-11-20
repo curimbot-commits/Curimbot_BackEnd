@@ -207,12 +207,10 @@ def create_document(db: Session, document: DocumentCreate, file_type: FileType) 
     logging.info("=== INICIANDO create_document ===")
     logging.info(f"Datos recibidos - filename: {document.filename}, tipo: {file_type}")
     logging.info(f"Tamaño: {document.size}, uploaded_by: {document.uploaded_by}")
-    
+
     try:
-        # Convertir file_type a string si es enum
         file_type_str = file_type.value if hasattr(file_type, "value") else str(file_type)
-        
-        # Crear modelo de BD
+
         db_document = models.Document(
             filename=document.filename,
             mimetype=document.mimetype,
@@ -221,26 +219,25 @@ def create_document(db: Session, document: DocumentCreate, file_type: FileType) 
             text=document.text,
             blob_enc=document.blob_enc,
             uploaded_by=document.uploaded_by,
-            is_public=document.is_public
+            is_public=document.is_public,
+            content_hash=document.content_hash,
         )
-        
-        # Guardar en BD
+
         db.add(db_document)
-        db.flush()  # Obtener ID sin commit aún
-        db.refresh(db_document)  # Cargar valores del servidor
-        
-        # Log sin imprimir blob binario completo (es grande)
+        db.flush()
+        db.refresh(db_document)
+
         doc_dict = db_document.__dict__.copy()
         if 'blob_enc' in doc_dict:
             doc_dict['blob_enc'] = f"<{len(doc_dict['blob_enc'])} bytes binarios>"
-        
-        logging.info(f"✅ Documento creado exitosamente con ID {db_document.id}")
+
+        logging.info(f"Documento creado exitosamente con ID {db_document.id}")
         logging.info(f"Documento final: {doc_dict}")
-        
+
         return db_document
-        
+
     except Exception as e:
-        logging.exception(f"❌ Error detallado en create_document: {e}")
+        logging.exception(f"Error detallado en create_document: {e}")
         raise
 
 
@@ -479,56 +476,6 @@ def search_documents(
 # 🚀 NUEVAS FUNCIONES PARA ACTIVIDADES Y ESTADÍSTICAS
 # =========================================================
 
-def create_activity(
-    db: Session,
-    user_id: Optional[int],
-    document_id: int,
-    action: str,
-    ip_address: Optional[str] = None
-) -> models.ActivityLog:
-    """
-    Crear un registro de actividad del usuario.
-    
-    Registra acciones como: view, download, upload, delete, share.
-    Útil para auditoría y tracking de uso.
-    
-    Args:
-        db (Session): Sesión de base de datos SQLAlchemy
-        user_id (Optional[int]): ID del usuario (None = acción anónima)
-        document_id (int): ID del documento afectado
-        action (str): Tipo de acción (view, download, upload, delete, share)
-        ip_address (Optional[str]): IP del cliente
-    
-    Returns:
-        models.ActivityLog: Registro de actividad creado
-    
-    Example:
-        from app.db.crud import create_activity
-        
-        activity = create_activity(
-            db,
-            user_id=1,
-            document_id=123,
-            action="download",
-            ip_address="192.168.1.1"
-        )
-    
-    Notes:
-        - Timestamp se genera automáticamente (timezone.utc)
-        - user_id puede ser None para acciones no autenticadas
-        - Útil para análisis de patrones de uso
-    """
-    db_activity = models.ActivityLog(
-        user_id=user_id,
-        document_id=document_id,
-        action=action,
-        ip_address=ip_address,
-        timestamp=datetime.now(timezone.utc)
-    )
-    db.add(db_activity)
-    return db_activity
-
-
 def increment_view_count(db: Session, doc: models.Document) -> None:
     """
     Incrementar contador de visualizaciones de un documento.
@@ -581,121 +528,63 @@ def increment_download_count(db: Session, doc: models.Document) -> None:
     db.add(doc)
 
 
-def create_activity_log(
+# =========================================================
+# 🚀 FUNCIONES PARA INTERACCIONES IA
+# =========================================================
+
+def create_ai_interaction(
     db: Session,
-    user_id: Optional[int],
-    document_id: int,
-    action: str,
-    ip_address: Optional[str] = None,
-    document_name: Optional[str] = None,
-    document_type: Optional[FileType] = None
-) -> models.ActivityLog:
+    user_id: int,
+    question: str,
+    answer: Optional[str],
+    channel,
+    confidence: Optional[float],
+    status,
+    error_message: Optional[str] = None,
+    sources: Optional[str] = None,
+    sources_info: Optional[str] = None,
+    processing_time_ms: Optional[int] = None,
+    from_cache: bool = False,
+    conversation_id: Optional[int] = None,
+) -> models.AIInteractionLog:
     """
-    Crear registro de actividad con actualización automática de métricas.
-    
-    Registra acción del usuario Y actualiza automáticamente contadores
-    del documento (view_count, download_count, last_accessed).
-    
-    Acciones soportadas:
-        - **view**: Visualizar documento → incrementa view_count
-        - **download**: Descargar documento → incrementa download_count
-        - **upload**: Subir documento → actualiza last_accessed
-        - **delete**: Eliminar documento → actualiza last_accessed
-        - **share**: Compartir documento → actualiza last_accessed
-    
-    Información capturada:
-        - user_id: Quién realizó la acción
-        - document_id: A qué documento
-        - action: Qué acción
-        - ip_address: Desde dónde
-        - timestamp: Cuándo (auto-generado)
-        - document_name: Nombre del documento
-        - document_type: Tipo del documento
-    
+    Crear un registro de interacción IA (pregunta/respuesta).
+
+    Reemplaza al antiguo create_activity_log. Registra la interacción
+    del usuario con Curim (voz o texto) para el historial de actividad.
+
     Args:
-        db (Session): Sesión de base de datos SQLAlchemy
-        user_id (Optional[int]): ID del usuario (None si anónimo)
-        document_id (int): ID del documento
-        action (str): Tipo de acción (view, download, upload, delete, share)
-        ip_address (Optional[str]): Dirección IP del cliente
-        document_name (Optional[str]): Nombre del documento (para logging)
-        document_type (Optional[FileType]): Tipo del documento
-    
+        db: Sesión SQLAlchemy
+        user_id: Usuario que hizo la pregunta
+        question: Pregunta del usuario
+        answer: Respuesta de la IA (None si error)
+        channel: AIChannel.text | AIChannel.voice
+        confidence: 0-1 (None si no aplica)
+        status: AIInteractionStatus.success | error | no_context
+        error_message: Mensaje de error si falló
+        sources: JSON string con IDs de documentos
+        sources_info: JSON string con info detallada de fuentes
+        processing_time_ms: Tiempo total en ms
+        from_cache: Si vino del caché
+        conversation_id: ID de conversación Curim (opcional)
+
     Returns:
-        models.ActivityLog: Registro de actividad creado
-    
-    Example:
-        from app.db.crud import create_activity_log
-        from app.enums.enums import FileType
-        
-        activity = create_activity_log(
-            db,
-            user_id=1,
-            document_id=123,
-            action="download",
-            ip_address="192.168.1.1",
-            document_name="reporte.pdf",
-            document_type=FileType.PDF
-        )
-        db.commit()
-    
-    Operación:
-        1. Obtener documento por ID
-        2. Si existe:
-            - Incrementar contador según action (view/download)
-            - Actualizar last_accessed
-            - Guardar cambios
-        3. Crear ActivityLog con toda la información
-        4. Agregar a sesión (no commit automático)
-    
-    Métricas que actualiza:
-        - view: documento.view_count += 1
-        - download: documento.download_count += 1
-        - view/download/upload/delete/share: último_acceso = ahora
-    
-    Auditoría:
-        - Cada acción se registra completamente
-        - Incluye IP para análisis de seguridad
-        - Timestamp automático (UTC)
-        - Nombre y tipo del documento para context
-    
-    Performance:
-        - 1 query para GET del documento
-        - 1 UPDATE del documento
-        - 1 INSERT en ActivityLog
-        - Típicamente < 100ms
-    
-    Notes:
-        - Llamador debe hacer db.commit() después
-        - document_name y document_type son opcionales (para debugging)
-        - Combina auditoría y métricas en un solo lugar
-        - Útil para dashboards de actividad
+        models.AIInteractionLog
     """
-    # Obtener documento para actualizar métricas
-    doc = get_document_by_id(db, document_id)
-    if doc:
-        # Actualizar contadores según tipo de acción
-        if action == "view":
-            doc.view_count = (doc.view_count or 0) + 1
-        elif action == "download":
-            doc.download_count = (doc.download_count or 0) + 1
-        
-        # Actualizar último acceso para ciertas acciones
-        if action in ["view", "download", "delete", "upload", "share"]:
-            doc.last_accessed = datetime.now(timezone.utc)
-        
-        db.add(doc)
-    
-    # Crear registro de actividad
-    db_activity = models.ActivityLog(
+    interaction = models.AIInteractionLog(
         user_id=user_id,
-        document_id=document_id,
-        action=action,
-        ip_address=ip_address,
+        question=question,
+        answer=answer,
+        channel=channel,
+        confidence=confidence,
+        status=status,
+        error_message=error_message,
+        sources=sources,
+        sources_info=sources_info,
+        processing_time_ms=processing_time_ms,
+        from_cache=from_cache,
+        conversation_id=conversation_id,
         timestamp=datetime.now(timezone.utc),
-        document_name=document_name,
-        document_type=document_type
     )
-    db.add(db_activity)
-    
-    return db_activity
+    db.add(interaction)
+    return interaction

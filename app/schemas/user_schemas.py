@@ -79,6 +79,7 @@ class UserInfoResponse(BaseModel):
     last_login: Optional[datetime] = None
     is_active: bool = True
     two_factor_enabled: bool
+    profile_photo_url: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 

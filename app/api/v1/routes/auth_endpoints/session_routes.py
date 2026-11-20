@@ -14,9 +14,31 @@ from app.schemas.session_schemas import (
 )
 from app.services.session_service import SessionService
 from app.services.auth_service import get_current_user
+from app.services import security_service
 
 router = APIRouter(prefix="/auth/sessions", tags=["sessions"])
 logger = logging.getLogger(__name__)
+
+
+def _request_session_id(request: Request, user_id: int, db: Session):
+    """
+    ID de la sesión que hace esta petición, a partir del jti de su access
+    token (cookie o Bearer). No usar `is_current`: marca la última sesión
+    creada, que puede ser la de otro dispositivo.
+    """
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+    if not token:
+        return None
+    jti = security_service.decode_token(token).get("jti")
+    session = db.query(ActiveSession).filter(
+        ActiveSession.user_id == user_id,
+        ActiveSession.access_token_jti == jti,
+    ).first()
+    return session.id if session else None
 
 
 @router.get(
@@ -26,6 +48,7 @@ logger = logging.getLogger(__name__)
     description="Retorna todas las sesiones activas del usuario actual"
 )
 def get_active_sessions(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -41,8 +64,13 @@ def get_active_sessions(
             db=db,
             active_only=True
         )
-        
-        return sessions
+
+        # "Actual" = la sesión de esta petición (no el flag is_current de la BD)
+        current_id = _request_session_id(request, current_user.id, db)
+        return [
+            ActiveSessionOut.model_validate(s).model_copy(update={"is_current": s.id == current_id})
+            for s in sessions
+        ]
         
     except Exception as e:
         logger.exception(f"Error obteniendo sesiones activas: {e}")
@@ -115,6 +143,7 @@ def revoke_session_legacy(
     description="Revoca todas las sesiones del usuario excepto la actual (opcional)"
 )
 def revoke_all_sessions(
+    request: Request,
     request_data: RevokeAllSessionsRequest = RevokeAllSessionsRequest(except_current=True),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -132,13 +161,7 @@ def revoke_all_sessions(
         # Obtener ID de sesión actual
         current_session_id = None
         if request_data.except_current:
-            current_session = db.query(ActiveSession).filter(
-                ActiveSession.user_id == current_user.id,
-                ActiveSession.is_current == True
-            ).first()
-            
-            if current_session:
-                current_session_id = current_session.id
+            current_session_id = _request_session_id(request, current_user.id, db)
         
         result = SessionService.revoke_all_sessions(
             user_id=current_user.id,

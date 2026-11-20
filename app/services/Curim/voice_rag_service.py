@@ -1,12 +1,12 @@
 """
-VoiceRAGService — Wrapper del VoiceRAGEngine existente para el asistente de voz.
+VoiceRAGService — wrapper del VoiceRAGEngine para el asistente de voz.
 
-Usa el vectorstore Chroma con embeddings semánticos (HuggingFace multilingual)
-que ya está indexado cuando el usuario sube documentos.
+Usa el vectorstore Chroma con embeddings semánticos que ya está indexado
+cuando el usuario sube documentos.
 
 Flujo:
-    1. Usuario habla → Gemini transcribe
-    2. Frontend envía transcripción → POST /api/v1/voice/context
+    1. Usuario habla -> Gemini transcribe
+    2. Frontend envía transcripción -> POST /api/v1/voice/context
     3. VoiceRAGService busca en Chroma los chunks más relevantes del usuario
     4. Retorna contexto formateado para inyectar en Gemini Live
 """
@@ -20,7 +20,6 @@ from app.services.Curim.rag_engine import VoiceRAGEngine
 
 logger = logging.getLogger(__name__)
 
-# Singleton del RAGEngine — se inicializa una sola vez al arrancar FastAPI
 _rag_engine: Optional[VoiceRAGEngine] = None
 
 
@@ -36,9 +35,8 @@ def get_rag_engine() -> VoiceRAGEngine:
 
 class VoiceRAGService:
     """
-    Conecta el endpoint de voz con el VoiceRAGEngine existente.
-    Recupera contexto semántico de los documentos del usuario
-    para enriquecer las respuestas de Gemini Live.
+    Conecta el endpoint de voz con el VoiceRAGEngine.
+    Recupera contexto semántico de los documentos del usuario.
     """
 
     def retrieve_context(
@@ -51,23 +49,12 @@ class VoiceRAGService:
         """
         Busca fragmentos semánticamente relevantes en los documentos del usuario.
 
-        Usa el mismo vectorstore Chroma que ya se construye al subir documentos.
-        Filtra automáticamente por document_id para que cada usuario
-        solo vea sus propios documentos.
-
-        Args:
-            query:     Transcripción de lo que dijo el usuario.
-            user_id:   ID del usuario autenticado.
-            db:        Sesión de base de datos.
-            max_chars: Límite de caracteres del contexto resultante.
-
         Returns:
             String con contexto formateado, o None si no hay matches.
         """
         if not query or not query.strip():
             return None
 
-        # Obtener documentos del usuario que tengan texto extraído e indexado
         documents = (
             db.query(Document)
             .filter(
@@ -91,43 +78,38 @@ class VoiceRAGService:
         try:
             engine = get_rag_engine()
 
-            # _retrieve_context_sync del RAGEngine existente:
-            # - Hace similarity_search_with_score en Chroma
-            # - Filtra por {"document_id": {"$in": doc_ids}}
-            # - Retorna los 6 chunks más relevantes con score < 1.5
-            context = engine._retrieve_context_sync(query, documents)
+            # _retrieve_context_sync devuelve (context_str, [(doc, score), ...])
+            context_str, _retrieved = engine._retrieve_context_sync(
+                query, documents
+            )
 
-            # Respuestas vacías del engine
             NO_RESULT_RESPONSES = {
                 "No hay documentos disponibles.",
-                "No se encontró información relevante.",
-                "No se encontraron chunks con suficiente relevancia.",
+                "No se encontró información relevante en los documentos.",
+                "No se encontraron fragmentos con suficiente relevancia para responder.",
                 "",
             }
 
-            if not context or context in NO_RESULT_RESPONSES:
+            if not context_str or context_str in NO_RESULT_RESPONSES:
                 logger.info(
                     f"[VoiceRAG] Sin matches semánticos para: '{query[:60]}'"
                 )
                 return None
 
-            # Truncar si supera el límite para no sobrecargar Gemini
-            if len(context) > max_chars:
-                context = context[:max_chars] + "..."
+            if len(context_str) > max_chars:
+                context_str = context_str[:max_chars] + "..."
 
             logger.info(
-                f"[VoiceRAG] Contexto recuperado: {len(context)} chars "
+                f"[VoiceRAG] Contexto recuperado: {len(context_str)} chars "
                 f"de {len(documents)} documento(s) disponibles"
             )
-            return context
+            return context_str
 
         except Exception as e:
             logger.error(f"[VoiceRAG] Error en retrieval: {e}", exc_info=True)
-            # No propagar — la conversación debe continuar sin contexto
             return None
 
 
-# Singleton del servicio
 _voice_rag_service: Optional[VoiceRAGService] = None
 
 

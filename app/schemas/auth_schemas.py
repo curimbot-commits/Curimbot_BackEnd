@@ -1,4 +1,7 @@
-# security.py - Esquemas Pydantic completos para autenticación
+# auth_schemas.py 
+"""
+Este archivo contiene todos los esquemas Pydantic para autenticación y autorización.
+"""
 
 import re
 from pydantic import BaseModel, Field, EmailStr, field_validator, ConfigDict
@@ -13,12 +16,6 @@ from app.schemas.user_schemas import UserInfoResponse
 # ========================================
 #  EXCEPCIONES PERSONALIZADAS
 # ========================================
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
-
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
 class AuthServiceError(Exception):
     """Base exception for authentication service errors"""
     pass
