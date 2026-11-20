@@ -11,6 +11,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.rate_limit import rate_limit
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -87,7 +88,7 @@ async def _create_auth_token(config: types.CreateAuthTokenConfig):
     return await client.aio.auth_tokens.create(config=config)
 
 
-@router.get("/token", response_model=VoiceTokenResponse)
+@router.get("/token", response_model=VoiceTokenResponse, dependencies=[Depends(rate_limit(10, 60))])
 async def get_voice_token(current_user=Depends(get_current_user)):
     """
     Emite un token efímero de Gemini Live para el usuario autenticado.
@@ -124,7 +125,7 @@ async def get_voice_token(current_user=Depends(get_current_user)):
     return VoiceTokenResponse(token=token.name, expire_time=expire_time)
 
 
-@router.post("/context", response_model=ContextResponse)
+@router.post("/context", response_model=ContextResponse, dependencies=[Depends(rate_limit(60, 60))])
 async def get_voice_context(
     request: ContextRequest,
     db: Session = Depends(get_db),

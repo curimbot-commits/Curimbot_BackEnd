@@ -39,6 +39,7 @@ from fastapi import (
     Body,
 )
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from app.core.rate_limit import rate_limit
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -157,7 +158,7 @@ def _clear_auth_cookies(response: Response) -> None:
 # ENDPOINTS DE AUTENTICACIÓN BÁSICA
 # ========================================
 
-@router.post("/login", summary="Iniciar sesión")
+@router.post("/login", summary="Iniciar sesión", dependencies=[Depends(rate_limit(10, 60))])
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     request: Request = None,
@@ -240,6 +241,7 @@ def login(
 
 @router.post(
     "/signup",
+    dependencies=[Depends(rate_limit(5, 60))],
     status_code=status.HTTP_201_CREATED,
     summary="Registrar nuevo usuario",
 )
@@ -370,7 +372,7 @@ def logout(
         _clear_auth_cookies(err_response)
         return err_response
 
-@router.post("/refresh", summary="Renovar tokens")
+@router.post("/refresh", summary="Renovar tokens", dependencies=[Depends(rate_limit(30, 60))])
 def refresh_token(
     request: Request,
     db: Session = Depends(get_db),
@@ -442,7 +444,7 @@ def refresh_token(
 # ENDPOINTS DE AUTENTICACIÓN CON 2FA
 # ========================================
 
-@router.post("/login-with-2fa", summary="Login con 2FA")
+@router.post("/login-with-2fa", summary="Login con 2FA", dependencies=[Depends(rate_limit(10, 60))])
 def login_with_2fa(
     request: Request,
     challenge_token: str = Form(...),

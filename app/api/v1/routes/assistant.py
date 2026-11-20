@@ -24,6 +24,7 @@ Componentes:
 import io
 import edge_tts
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.rate_limit import rate_limit
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -70,7 +71,7 @@ def get_db():
 # ENDPOINTS - CONSULTAS
 # ===========================
 
-@router.post("/query", response_model=CurimResponse)
+@router.post("/query", response_model=CurimResponse, dependencies=[Depends(rate_limit(30, 60))])
 async def ask_Curim(
     request: CurimQueryRequest,
     current_user: User = Depends(get_current_user),
@@ -534,7 +535,7 @@ async def get_cache_stats(
 # ENDPOINTS - TEXT TO SPEECH
 # ===========================
 
-@router.post("/tts")
+@router.post("/tts", dependencies=[Depends(rate_limit(20, 60))])
 async def text_to_speech(
     request: dict,
     current_user: User = Depends(get_current_user)

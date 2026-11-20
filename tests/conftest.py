@@ -26,6 +26,7 @@ if not _base_url or not _base_url.startswith("mysql"):
 TEST_DB_URL = re.sub(r"/([^/?]+)(\?|$)", r"/\1_test\2", _base_url, count=1)
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["TESTING"] = "1"
+os.environ["RATE_LIMIT_ENABLED"] = "false"  # los tests de rate limit lo activan explícitamente
 
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
