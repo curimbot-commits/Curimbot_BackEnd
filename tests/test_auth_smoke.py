@@ -64,39 +64,79 @@ def _two_fa_user(make_user, **fields):
     return user, secret
 
 
-def _login_2fa(client, email, code, password=TEST_PASSWORD):
+def _challenge(client, email) -> str:
+    """Paso 1: login con contraseña → challenge_token (sin cookies de sesión)."""
+    client.cookies.clear()
+    r = login(client, email)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["requires_2fa"] is True
+    assert "access_token" not in body and "access_token" not in r.cookies
+    return body["challenge_token"]
+
+
+def _login_2fa(client, challenge, code):
+    """Paso 2: challenge_token + código. La contraseña ya no se reenvía."""
     return client.post(
         "/auth/login-with-2fa",
-        data={"username": email, "password": password, "totp_code": code},
+        data={"challenge_token": challenge, "totp_code": code},
     )
 
 
 def test_login_with_2fa_success(client, make_user):
     user, secret = _two_fa_user(make_user)
-    r = _login_2fa(client, user.email, pyotp.TOTP(secret).now())
+    challenge = _challenge(client, user.email)
+    r = _login_2fa(client, challenge, pyotp.TOTP(secret).now())
     assert r.status_code == 200, r.text
+    assert "access_token" in r.cookies
 
 
-def test_login_with_2fa_rejects_inactive_user(client, make_user):
-    user, secret = _two_fa_user(make_user, is_active=False)
-    r = _login_2fa(client, user.email, pyotp.TOTP(secret).now())
+def test_login_with_2fa_challenge_is_single_use(client, make_user):
+    user, secret = _two_fa_user(make_user)
+    challenge = _challenge(client, user.email)
+    assert _login_2fa(client, challenge, pyotp.TOTP(secret).now()).status_code == 200
+    assert _login_2fa(client, challenge, pyotp.TOTP(secret).now()).status_code == 401
+
+
+def test_login_with_2fa_rejects_access_token_as_challenge(client, make_user):
+    user, secret = _two_fa_user(make_user)
+    from app.services import security_service
+
+    access = security_service.create_access_token({"sub": str(user.id)})
+    r = _login_2fa(client, access, pyotp.TOTP(secret).now())
+    assert r.status_code == 401
+
+
+def test_challenge_token_is_not_an_access_token(client, make_user):
+    user, _ = _two_fa_user(make_user)
+    challenge = _challenge(client, user.email)
+    assert client.get("/auth/me", headers=_bearer(challenge)).status_code == 401
+
+
+def test_login_with_2fa_rejects_inactive_user(client, make_user, db):
+    user, secret = _two_fa_user(make_user)
+    challenge = _challenge(client, user.email)
+    user.is_active = False
+    db.commit()
+    r = _login_2fa(client, challenge, pyotp.TOTP(secret).now())
     assert r.status_code in (401, 423)
 
 
-def test_login_with_2fa_rejects_locked_user(client, make_user):
-    user, secret = _two_fa_user(
-        make_user,
-        failed_attempts=5,
-        locked_until=datetime.now(timezone.utc) + timedelta(minutes=10),
-    )
-    r = _login_2fa(client, user.email, pyotp.TOTP(secret).now())
+def test_login_with_2fa_rejects_locked_user(client, make_user, db):
+    user, secret = _two_fa_user(make_user)
+    challenge = _challenge(client, user.email)
+    user.failed_attempts = 5
+    user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.commit()
+    r = _login_2fa(client, challenge, pyotp.TOTP(secret).now())
     assert r.status_code == 423
 
 
 def test_login_with_2fa_bad_codes_lock_the_account(client, make_user, db):
     user, _ = _two_fa_user(make_user)
+    challenge = _challenge(client, user.email)
     for _ in range(5):
-        assert _login_2fa(client, user.email, "000000").status_code == 401
+        assert _login_2fa(client, challenge, "000000").status_code == 401
     db.rollback()  # cierra el snapshot REPEATABLE READ de MySQL
     db.refresh(user)
     assert user.failed_attempts >= 5

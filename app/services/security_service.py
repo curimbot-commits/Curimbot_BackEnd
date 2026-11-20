@@ -165,6 +165,27 @@ def create_refresh_token(data: dict) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+TWO_FACTOR_CHALLENGE_MINUTES = 5
+
+
+def create_2fa_challenge_token(user_id: int) -> str:
+    """
+    Crea el token del paso intermedio del login con 2FA.
+
+    Prueba que la contraseña ya se verificó, sin que el cliente tenga que
+    guardarla. Dura 5 minutos, es de un solo uso (su `jti` se revoca al
+    usarse) y su tipo `2fa_challenge` impide usarlo como access token.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=TWO_FACTOR_CHALLENGE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "exp": expire,
+        "type": "2fa_challenge",
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
 def decode_token(token: str) -> dict:
     """
     Decodifica y valida un JWT token.

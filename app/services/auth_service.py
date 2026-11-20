@@ -464,34 +464,46 @@ class AuthService:
 
     @staticmethod
     def authenticate_with_2fa(
-        email: str,
-        password: str,
+        challenge_token: str,
         code: str,
         db: Session,
         ip_address: str,
         user_agent: str,
     ) -> User:
         """
-        Valida credenciales y segundo factor aplicando las mismas reglas que
-        `login_user`: bloqueo temporal, cuenta activa y registro de intentos
-        fallidos (tanto por contraseña como por código TOTP/respaldo).
+        Segundo paso del login con 2FA.
+
+        Recibe el `challenge_token` emitido por `login_user` (que ya verificó
+        la contraseña) y el código TOTP o de respaldo. Aplica las mismas reglas
+        que `login_user`: bloqueo temporal, cuenta activa y registro de
+        intentos fallidos. El challenge es de un solo uso: se revoca al
+        completar el login.
 
         Returns:
             Usuario autenticado, con el contador de intentos reiniciado.
 
         Raises:
-            InvalidCredentialsError: Credenciales o código inválidos.
+            InvalidCredentialsError: Challenge o código inválidos.
             AccountLockedError: Cuenta bloqueada o desactivada.
         """
-        user = db.query(User).filter(User.email == email).first()
+        try:
+            payload = security_service.decode_token(challenge_token)
+        except HTTPException:
+            raise InvalidCredentialsError("Sesión de verificación inválida o expirada")
+
+        jti = payload.get("jti")
+        if (
+            payload.get("type") != "2fa_challenge"
+            or not jti
+            or AuthService.is_token_blacklisted(jti, db)
+        ):
+            raise InvalidCredentialsError("Sesión de verificación inválida o expirada")
+
+        user = db.query(User).filter(User.id == payload.get("sub")).first()
         if not user:
-            raise InvalidCredentialsError("Credenciales inválidas")
+            raise InvalidCredentialsError("Sesión de verificación inválida o expirada")
 
         AuthService._ensure_not_locked(user, db)
-
-        if not security_service.verify_password(password, user.password_hash):
-            AuthService._record_failed_attempt(user, ip_address, user_agent, db)
-            raise InvalidCredentialsError("Credenciales inválidas")
 
         if not user.is_active:
             raise AccountLockedError("Cuenta desactivada")
@@ -508,6 +520,12 @@ class AuthService:
 
         user.failed_attempts = 0
         user.locked_until = None
+        db.add(
+            BlacklistedToken(
+                jti=jti,
+                expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+            )
+        )
         db.commit()
         AuthService._log_login_attempt(
             email=user.email,
@@ -589,6 +607,7 @@ class AuthService:
             return {
                 "requires_2fa": True,
                 "message": "Verificación de dos factores requerida",
+                "challenge_token": security_service.create_2fa_challenge_token(user.id),
             }
 
         user.failed_attempts = 0

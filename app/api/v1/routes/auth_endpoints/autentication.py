@@ -201,6 +201,7 @@ def login(
                 content={
                     "requires_2fa": True,
                     "message": "Verificación de dos factores requerida",
+                    "challenge_token": result["challenge_token"],
                 },
             )
 
@@ -444,16 +445,18 @@ def refresh_token(
 @router.post("/login-with-2fa", summary="Login con 2FA")
 def login_with_2fa(
     request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    challenge_token: str = Form(...),
     totp_code: str = Form(...),
     db: Session = Depends(get_db),
 ):
     """
-    Inicia sesión con credenciales y un código TOTP o código de respaldo.
+    Segundo paso del login con 2FA.
 
     Args:
         request: Solicitud HTTP entrante.
-        form_data: Formulario OAuth2 con `username` y `password`.
+        challenge_token: Token devuelto por `/auth/login` cuando
+            `requires_2fa` es true (5 minutos, un solo uso). Sustituye al
+            reenvío de la contraseña.
         totp_code: Código TOTP de seis dígitos o código de respaldo.
         db: Sesión de base de datos.
 
@@ -461,7 +464,8 @@ def login_with_2fa(
         JSONResponse con los tokens de acceso y refresco.
 
     Raises:
-        HTTPException 401: Credenciales o código inválidos.
+        HTTPException 401: Challenge o código inválidos.
+        HTTPException 423: Cuenta bloqueada o desactivada.
         HTTPException 500: Error interno durante el procesamiento.
     """
     try:
@@ -470,8 +474,7 @@ def login_with_2fa(
         )
         try:
             user = AuthService.authenticate_with_2fa(
-                email=form_data.username,
-                password=form_data.password,
+                challenge_token=challenge_token,
                 code=totp_code,
                 db=db,
                 ip_address=ip_address,
