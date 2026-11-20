@@ -10,6 +10,9 @@ from app.services import storage_service
 
 @pytest.fixture
 def reload_storage(monkeypatch):
+    # Aislar de .env: storage_service llama load_dotenv() al importarse.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+
     def _reload():
         return importlib.reload(storage_service)
 
