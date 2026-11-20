@@ -39,6 +39,7 @@ from app.schemas.password_reset_schemas import (
 from app.services.email_service import EmailService
 from app.services.notification_service import NotificationService
 from app.services.password_reset_service import PasswordResetService
+from app.services.auth_service import require_admin
 
 # Cargar variables de entorno
 load_dotenv()
@@ -304,7 +305,8 @@ def reset_password(
 
 @router.delete("/cleanup-expired")
 def cleanup_expired_tokens(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
 ):
     """
     Limpiar tokens de recuperación expirados de la base de datos.
@@ -345,7 +347,7 @@ def cleanup_expired_tokens(
         }
     
     Notes:
-        - Este endpoint debería protegerse con autenticación de admin
+        - Requiere rol de administrador
         - Considerar implementar soft-delete para auditoría
         - Ejecutar durante horas de bajo tráfico si hay muchos tokens
         - Los tokens activos (< 1 hora) nunca se eliminan
