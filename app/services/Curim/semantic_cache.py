@@ -8,6 +8,8 @@ import os
 
 import logging
 
+from app.services.Curim.language import detect_language
+
 logger = logging.getLogger(__name__)
 
 class SemanticCache:
@@ -58,12 +60,18 @@ class SemanticCache:
         else:
             question_embedding = self.model.embed_query(question)
         
-        # Buscar pregunta más similar del usuario
+        # Buscar pregunta más similar del usuario, solo en el mismo idioma:
+        # los embeddings son multilingües y una pregunta en inglés casi igual
+        # a una en español devolvería la respuesta en español.
+        lang = detect_language(question)
         best_match = None
         best_similarity = 0
-        
+
         for key, entry in self.cache.items():
             if entry.get('user_id') != user_id:
+                continue
+            entry_lang = entry.get('lang') or detect_language(entry.get('question'))
+            if entry_lang != lang:
                 continue
             
             cached_embedding = np.array(entry['embedding'])
@@ -104,6 +112,7 @@ class SemanticCache:
         self.cache[key] = {
             'user_id': user_id,
             'question': question,
+            'lang': detect_language(question),
             'answer': answer,
             'confidence': confidence,
             'sources': sources,
