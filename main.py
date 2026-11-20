@@ -51,6 +51,9 @@ logger = logging.getLogger("curim")
 # ─────────────────────────────────────────────
 # Validación de configuración temprana
 # ─────────────────────────────────────────────
+# En producción una configuración insegura detiene el arranque (fail-fast).
+settings.validate_production()
+
 try:
     settings.validate_Curim()
 except ValueError as e:
@@ -183,8 +186,10 @@ app = FastAPI(
     ),
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Documentación interactiva solo fuera de producción.
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 # ─────────────────────────────────────────────
@@ -215,7 +220,7 @@ app.add_middleware(
     secret_key=settings.SECRET_KEY,
     session_cookie="curim_session",
     same_site="lax",             # Permite cookies en redirects OAuth (cross-site GET)
-    https_only=False,            # False en desarrollo local (HTTP). Cambiar a True en producción
+    https_only=settings.COOKIE_SECURE,  # True en producción (HTTPS), False en local
     max_age=300,                 # 5 minutos: suficiente para completar el flujo OAuth
 )
 
@@ -239,7 +244,7 @@ def root():
         "status": "ok",
         "service": "Curim Asistente Documental",
         "version": "1.0.0",
-        "docs": "/docs",
+        "docs": None if settings.is_production else "/docs",
     }
 
 

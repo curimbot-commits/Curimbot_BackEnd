@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     )
 
     # ── Entorno ──────────────────────────────────────────────────────────────
-    DEBUG: bool = True
+    ENV: str = "development"
+    DEBUG: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENV.strip().lower() == "production"
 
     # ── Email ────────────────────────────────────────────────────────────────
     RESEND_API_KEY: Optional[str] = None
@@ -90,6 +95,23 @@ class Settings(BaseSettings):
     VOICE_SPEED: str = "+20%"
 
     # ── Validación ──────────────────────────────────────────────────────────
+    def validate_production(self) -> None:
+        """
+        Impide arrancar en producción con una configuración insegura.
+        No hace nada si ENV != production.
+        """
+        if not self.is_production:
+            return
+        problems = []
+        if self.SECRET_KEY == "defaultsecret" or len(self.SECRET_KEY) < 32:
+            problems.append("SECRET_KEY debe definirse y tener al menos 32 caracteres")
+        if not self.COOKIE_SECURE:
+            problems.append("COOKIE_SECURE debe ser True (HTTPS)")
+        if self.DEBUG:
+            problems.append("DEBUG debe ser False")
+        if problems:
+            raise ValueError("Configuración de producción insegura: " + "; ".join(problems))
+
     def validate_Curim(self):
         if not self.GEMINI_API_KEY:
             raise ValueError(
