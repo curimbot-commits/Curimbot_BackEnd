@@ -15,29 +15,17 @@ Fase 1:
 """
 
 import os
-import re
 import logging
-import hashlib
 import time
-import base64
-import asyncio
-from typing import List, Tuple, Dict, Optional, Callable, Any
-import numpy as np
-from collections import defaultdict
-from contextlib import contextmanager
+from typing import List, Tuple, Dict, Optional, Callable
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangchainDocument
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from google import genai as genai_client
 from google.genai import types
 from google.genai import errors as genai_errors
 import httpx
-import sounddevice as sd
-import soundfile as sf
-from io import BytesIO
 
 from app.core.config import settings
 from app.services.Curim.language import LANGUAGE_NAMES, detect_language, message
@@ -66,8 +54,6 @@ class VoiceRAGEngine:
         self._status = 'initializing'
         self._on_status_change = on_status_change
         self._initialized = False
-        self._is_recording = False
-        self._audio_queue = asyncio.Queue()
 
         try:
             self._set_status('initializing')
@@ -85,12 +71,6 @@ class VoiceRAGEngine:
             self.top_k = settings.TOP_K_RESULTS
             self.max_distance = settings.RAG_MAX_DISTANCE
 
-            # === CONFIGURACIÓN DE AUDIO ===
-            self.sample_rate = 16000
-            self.output_sample_rate = 24000
-            self.channels = 1
-            self.audio_buffer = []
-
             # === CONFIGURAR GEMINI ===
             self._init_gemini()
 
@@ -99,11 +79,6 @@ class VoiceRAGEngine:
 
             # === VECTOR STORE ===
             self._init_vectorstore()
-
-            # === ESTADO ===
-            self.conversation_history = []
-            self.max_history = 5
-            self.context_cache = {}
 
             self._initialized = True
             self._set_status('ready')
@@ -135,18 +110,6 @@ class VoiceRAGEngine:
     def _init_gemini(self, max_retries: int = 3) -> None:
         for attempt in range(max_retries):
             try:
-                genai.configure(api_key=self.gemini_api_key)
-
-                self.text_model = genai.GenerativeModel(
-                    settings.GEMINI_TEXT_MODEL,
-                    safety_settings={
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                    }
-                )
-
                 # Generación de texto del chat con google-genai (el SDK
                 # google.generativeai está deprecado y se cuelga con modelos 3.x)
                 self.text_client = genai_client.Client(
@@ -156,30 +119,7 @@ class VoiceRAGEngine:
                     ),
                 )
 
-                self.live_client = genai_client.Client(
-                    api_key=self.gemini_api_key,
-                    http_options={'api_version': 'v1alpha'}
-                )
-                self.live_model = settings.GEMINI_LIVE_MODEL
-
-                self.live_config = {
-                    "response_modalities": ["AUDIO"],
-                    "speech_config": {
-                        "voice_config": {
-                            "prebuilt_voice_config": {
-                                "voice_name": "Zephyr"
-                            }
-                        }
-                    },
-                    "system_instruction": {
-                        "parts": [{
-                            "text": "Eres un asistente de voz experto en documentos."
-                        }]
-                    }
-                }
-
-                self.model = self.text_model
-                logger.info("Gemini inicializado correctamente: Texto + Live API")
+                logger.info("Gemini inicializado correctamente")
                 return
 
             except Exception as e:
@@ -227,57 +167,6 @@ class VoiceRAGEngine:
                 logger.info("VectorDB creada nueva")
         except Exception as e:
             raise VoiceRAGEngineError(f"Error al inicializar vectorstore: {e}") from e
-
-    # ============================================================
-    # AUDIO
-    # ============================================================
-
-    def _audio_callback(self, indata, frames, time_info, status):
-        if status:
-            logger.warning(f"Audio callback status: {status}")
-        if self._is_recording:
-            self.audio_buffer.append(indata.copy())
-
-    def start_listening(self) -> None:
-        if not self.is_ready:
-            raise VoiceRAGEngineError(f"Motor no está listo (estado: {self._status})")
-        self._set_status('listening')
-        self._is_recording = True
-        self.audio_buffer = []
-        self.stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            callback=self._audio_callback,
-            dtype='int16'
-        )
-        self.stream.start()
-        logger.info("Micrófono activado - Escuchando...")
-
-    def stop_listening(self) -> bytes:
-        self._is_recording = False
-        if hasattr(self, 'stream'):
-            self.stream.stop()
-            self.stream.close()
-        if self.audio_buffer:
-            audio_data = np.concatenate(self.audio_buffer, axis=0)
-            logger.info(f"Audio capturado: {len(audio_data)} samples")
-            return audio_data.tobytes()
-        return b''
-
-    def _encode_audio_to_base64(self, audio_bytes: bytes) -> str:
-        return base64.b64encode(audio_bytes).decode('utf-8')
-
-    def _decode_audio_from_base64(self, base64_audio: str) -> bytes:
-        return base64.b64decode(base64_audio)
-
-    def _play_audio(self, audio_data: bytes) -> None:
-        try:
-            audio_array = np.frombuffer(audio_data, dtype=np.int16)
-            sd.play(audio_array, self.output_sample_rate)
-            sd.wait()
-            logger.info("Audio reproducido correctamente")
-        except Exception as e:
-            logger.error(f"Error reproduciendo audio: {e}")
 
     # ============================================================
     # CONSULTA TEXTO
@@ -483,75 +372,6 @@ RESPUESTA:"""
             logger.error(f"Error en query: {e}", exc_info=True)
             raise
 
-    async def query_by_voice(
-        self,
-        documents: List,
-        max_duration_seconds: int = 10
-    ) -> Tuple[bytes, float]:
-        if not self.is_ready:
-            raise VoiceRAGEngineError(f"Motor no está listo (estado: {self._status})")
-
-        try:
-            logger.info("Iniciando captura de voz...")
-            self.start_listening()
-            await asyncio.sleep(max_duration_seconds)
-            audio_input = self.stop_listening()
-
-            if not audio_input:
-                logger.warning("No se capturó audio")
-                return b'', 0.0
-
-            self._set_status('processing')
-            transcribed_question = await self._transcribe_audio(audio_input)
-            logger.info(f"Pregunta transcrita: {transcribed_question}")
-
-            if not transcribed_question:
-                error_audio = await self._generate_error_audio(
-                    "No pude entender tu pregunta. Por favor, intenta de nuevo."
-                )
-                return error_audio, 0.0
-
-            context, _ = self._retrieve_context_sync(transcribed_question, documents)
-            audio_response, confidence = await self._generate_voice_response(
-                transcribed_question, context
-            )
-
-            self._set_status('speaking')
-            self._play_audio(audio_response)
-            self._set_status('ready')
-            return audio_response, confidence
-
-        except Exception as e:
-            logger.error(f"Error en query por voz: {e}")
-            self._set_status('error')
-            raise VoiceRAGEngineError(f"Error al procesar consulta por voz: {e}") from e
-
-    async def create_live_session(self, document_ids: Optional[List[int]] = None):
-        if not hasattr(self, 'live_client'):
-            raise VoiceRAGEngineError("Live API no está disponible")
-
-        system_prompt = """Eres Curim, un asistente de voz experto en documentos.
-Responde de forma natural y conversacional basándote en el contexto proporcionado.
-Responde siempre en el mismo idioma en el que te hable el usuario.
-Nunca mezcles idiomas en una misma respuesta."""
-
-        if document_ids and str(document_ids) in self.context_cache:
-            context = self.context_cache.get(str(document_ids))
-            if context:
-                system_prompt = f"""Contexto de documentos:
-{context}
-
-{system_prompt}"""
-
-        config_dict = self.live_config.copy()
-        config_dict["system_instruction"]["parts"][0]["text"] = system_prompt
-
-        session = await self.live_client.aio.live.connect(
-            model=self.live_model,
-            config=types.LiveConnectConfig(**config_dict)
-        )
-        return session
-
     # ============================================================
     # RETRIEVAL
     # ============================================================
@@ -600,121 +420,6 @@ Nunca mezcles idiomas en una misma respuesta."""
             logger.error(f"Error en retrieval: {e}")
             return "", []
 
-    async def _retrieve_context(
-        self,
-        question: str,
-        documents: List
-    ) -> Tuple[str, List[Tuple[LangchainDocument, float]]]:
-        return await asyncio.to_thread(
-            self._retrieve_context_sync, question, documents
-        )
-
-    # ============================================================
-    # VOZ -> TEXTO / TEXTO -> AUDIO
-    # ============================================================
-
-    async def _transcribe_audio(self, audio_bytes: bytes) -> str:
-        try:
-            base64_audio = self._encode_audio_to_base64(audio_bytes)
-            prompt = (
-                "Transcribe exactamente lo que escuchas en el audio. "
-                "Devuelve solo la transcripción, sin comentarios adicionales."
-            )
-            response = await self.text_model.generate_content_async(
-                [
-                    {"mime_type": "audio/wav", "data": base64_audio},
-                    prompt
-                ]
-            )
-            return response.text.strip() if response.text else ""
-        except Exception as e:
-            logger.error(f"Error en transcripción: {e}")
-            return ""
-
-    async def _generate_voice_response(
-        self, question: str, context: str
-    ) -> Tuple[bytes, float]:
-        try:
-            prompt = f"""Eres Curim, un asistente experto en análisis de documentos.
-Responde de forma natural y conversacional basándote en el contexto.
-Responde en el mismo idioma en el que está formulada la pregunta.
-No uses Markdown ni el carácter asterisco. Si enumeras, usa frases naturales.
-
-CONTEXTO:
-{context}
-
-PREGUNTA:
-{question}
-
-Respuesta:"""
-
-            response = await self.text_model.generate_content_async(
-                prompt,
-                generation_config={
-                    'response_modalities': ['AUDIO'],
-                    'speech_config': {
-                        'voice_config': {
-                            'prebuilt_voice_config': {
-                                'voice_name': 'Zephyr'
-                            }
-                        }
-                    },
-                    'temperature': 0.4,
-                    'top_p': 0.85,
-                    'max_output_tokens': 500
-                }
-            )
-
-            audio_data = None
-            if response.candidates:
-                candidate = response.candidates[0]
-                if candidate.content and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
-                            if part.inline_data.mime_type.startswith('audio'):
-                                audio_data = self._decode_audio_from_base64(
-                                    part.inline_data.data
-                                )
-                                break
-
-            if not audio_data:
-                logger.warning("No se encontró audio en la respuesta")
-                return await self._generate_error_audio("Error al generar audio."), 0.3
-
-            # Confianza simple basada en presencia de contexto
-            confidence = 0.7 if context and "No se encontr" not in context else 0.2
-            return audio_data, confidence
-
-        except Exception as e:
-            logger.error(f"Error generando respuesta de voz: {e}")
-            return await self._generate_error_audio(
-                "Ocurrió un error al procesar tu pregunta."
-            ), 0.0
-
-    async def _generate_error_audio(self, error_message: str) -> bytes:
-        try:
-            response = await self.text_model.generate_content_async(
-                f"Di con voz natural y empática: {error_message}",
-                generation_config={
-                    'response_modalities': ['AUDIO'],
-                    'speech_config': {
-                        'voice_config': {
-                            'prebuilt_voice_config': {
-                                'voice_name': 'Zephyr'
-                            }
-                        }
-                    }
-                }
-            )
-            if response.candidates:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'inline_data'):
-                        return self._decode_audio_from_base64(part.inline_data.data)
-            return b''
-        except Exception as e:
-            logger.error(f"Error generando audio de error: {e}")
-            return b''
-
     # ============================================================
     # CONFIANZA Y UTILIDADES
     # ============================================================
@@ -738,11 +443,6 @@ Respuesta:"""
         except Exception as e:
             logger.error(f"Error calculando confianza: {e}")
             return 0.0
-
-    def _update_conversation_history(self, question: str, answer: str) -> None:
-        self.conversation_history.append((question, answer))
-        if len(self.conversation_history) > self.max_history:
-            self.conversation_history.pop(0)
 
     def get_db_size(self) -> float:
         try:
@@ -768,8 +468,6 @@ Respuesta:"""
         except Exception as e:
             # Chroma lanza si no hay nada que borrar en algunas versiones
             logger.debug(f"Sin fragmentos para documento {document_id}: {e}")
-        for k in [k for k in self.context_cache if str(document_id) in k]:
-            self.context_cache.pop(k, None)
 
     def index_document(self, document) -> int:
         """
@@ -837,13 +535,6 @@ Respuesta:"""
                 f"(document_id={document.id})"
             )
 
-            # Limpiar caché de contexto para este documento
-            keys_to_remove = [
-                k for k in self.context_cache if str(document.id) in k
-            ]
-            for k in keys_to_remove:
-                self.context_cache.pop(k, None)
-
             return len(chunks)
 
         except Exception as e:
@@ -854,12 +545,6 @@ Respuesta:"""
     def cleanup(self) -> None:
         try:
             self._set_status('closing')
-            if hasattr(self, 'stream'):
-                try:
-                    self.stream.stop()
-                    self.stream.close()
-                except Exception:
-                    pass
             logger.info("VoiceRAGEngine cerrado correctamente")
         except Exception as e:
             logger.error(f"Error en cleanup: {e}")

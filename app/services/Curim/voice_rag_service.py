@@ -51,16 +51,6 @@ class VoiceRAGService:
     Recupera contexto semántico de los documentos del usuario.
     """
 
-    def retrieve_context(
-        self,
-        query: str,
-        user_id: int,
-        db: Session,
-        max_chars: int = 3000,
-    ) -> Optional[str]:
-        context, _ = self.retrieve_context_with_sources(query, user_id, db, max_chars)
-        return context
-
     def retrieve_context_with_sources(
         self,
         query: str,
