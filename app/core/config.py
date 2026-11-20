@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # timeout o modelo no disponible (404).
     GEMINI_TEXT_FALLBACK_MODELS: str = "gemini-3.8-flash,gemini-3.5-flash-lite"
     GEMINI_TEXT_TIMEOUT_SECONDS: int = 30
+    # Los modelos 3.x "piensan" y esos tokens cuentan en el límite de salida:
+    # con 1024 tokens la respuesta se cortaba (finish_reason=MAX_TOKENS).
+    GEMINI_TEXT_MAX_OUTPUT_TOKENS: int = 4096
+    # 0 = sin razonamiento previo (responder desde el contexto no lo necesita).
+    GEMINI_TEXT_THINKING_BUDGET: int = 0
     GEMINI_LIVE_MODEL: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     Curim_STORAGE_PATH: str = "./storage/Curim_data"
     Curim_CACHE_ENABLED: bool = True

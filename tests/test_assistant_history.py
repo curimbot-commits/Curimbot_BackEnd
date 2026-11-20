@@ -108,18 +108,20 @@ def test_deleting_document_purges_index_and_caches(client, make_user, db, monkey
     assert service.cache_manager.get_size(user.id) == 0
 
 
-def test_voice_interaction_is_stored_and_listed_in_history(client, make_user):
+def test_voice_is_not_logged_and_history_has_utc_timestamps(client, make_user, db):
+    """El historial es solo de texto: la voz ya no se registra."""
+    from app.enums.enums import AIChannel
+    from app.services.handlers.log_activity import LogAIInteractionHandler
+
     user = make_user()
     _login(client, user)
-    r = client.post("/api/v1/voice/log-interaction", json={
-        "question": "¿qué cubre el seguro?", "answer": "Cubre...", "status": "success",
-        "sources": [3], "sources_info": [{"document_id": 3, "filename": "x.pdf"}],
-        "processing_time_ms": 1200,
-    })
-    assert r.status_code == 200, r.text
+    r = client.post("/api/v1/voice/log-interaction", json={"question": "q", "answer": "a"})
+    assert r.status_code == 404
+
+    LogAIInteractionHandler.log(db=db, user_id=user.id, question="pregunta", answer="respuesta",
+                                channel=AIChannel.text, sources=[3])
     history = client.get("/documents/ai-interactions/recent", params={"limit": 10}).json()
-    assert history[0]["channel"] == "voice"
-    assert history[0]["question"] == "¿qué cubre el seguro?"
+    assert [h["channel"] for h in history] == ["text"]
     assert history[0]["sources"] == [3]
     ts = history[0]["timestamp"]
-    assert ts.endswith("Z") or ts.endswith("+00:00"), ts  # UTC explícito
+    assert ts.endswith("Z") or ts.endswith("+00:00"), ts  # UTC explicito

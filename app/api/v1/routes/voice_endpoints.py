@@ -6,7 +6,6 @@ POST /api/v1/voice/context  — Fragmentos RAG relevantes para la query
 """
 
 from app.models.auth_models import User
-from app.services.handlers.log_activity import LogAIInteractionHandler
 import logging
 import os
 
@@ -19,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.services.Curim.voice_rag_service import get_voice_rag_service
 from app.db.database import SessionLocal
 from app.services.auth_service import get_current_user
-from app.enums.enums import AIChannel, AIInteractionStatus
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from google import genai
@@ -160,55 +158,3 @@ def get_voice_context(
         logger.error(f"[RAG] Error recuperando contexto: {e}", exc_info=True)
         # No fallar la conversación por error de RAG
         return ContextResponse(context=None, found=False)
-
-
-class VoiceInteractionLogRequest(BaseModel):
-    question: str = Field(..., min_length=1)
-    answer: Optional[str] = None
-    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
-    sources: Optional[List[int]] = None
-    sources_info: Optional[List[dict]] = None
-    status: AIInteractionStatus = AIInteractionStatus.success
-    error_message: Optional[str] = None
-    processing_time_ms: Optional[int] = None
-    from_cache: bool = False
-
-
-class VoiceInteractionLogResponse(BaseModel):
-    id: int
-    status: str
-
-
-@router.post("/log-interaction", response_model=VoiceInteractionLogResponse)
-def log_voice_interaction(
-    payload: VoiceInteractionLogRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Registra una interacción de voz del usuario con la IA.
-
-    El frontend llama a este endpoint DESPUÉS de recibir la respuesta
-    de Gemini Live (que se genera directo en el navegador). Así podemos
-    poblar el historial de interacciones con channel='voice'.
-    """
-    interaction = LogAIInteractionHandler.log(
-        db=db,
-        user_id=current_user.id,
-        question=payload.question,
-        answer=payload.answer,
-        channel=AIChannel.voice,
-        confidence=payload.confidence,
-        status=payload.status,
-        error_message=payload.error_message,
-        sources=payload.sources,
-        sources_info=payload.sources_info,
-        processing_time_ms=payload.processing_time_ms,
-        from_cache=payload.from_cache,
-        conversation_id=None,  # No aplica para voz
-    )
-
-    if not interaction:
-        raise HTTPException(status_code=500, detail="No se pudo registrar la interacción de voz")
-
-    return VoiceInteractionLogResponse(id=interaction.id, status="ok")
