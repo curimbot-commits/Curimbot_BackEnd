@@ -13,8 +13,10 @@ seguimiento de sesiones activas.
 
 from qrcode.image.pil import PilImage
 import base64
+import json
 import logging
 import secrets
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -509,9 +511,7 @@ class AuthService:
         if not user.two_factor_enabled or not user.two_factor_secret:
             raise InvalidCredentialsError("Código inválido")
 
-        code_ok = TwoFactorAuthService.verify_totp_code(
-            user.two_factor_secret, code
-        ) or TwoFactorAuthService.verify_backup_code(user, code, db)
+        code_ok = TwoFactorAuthService.verify_user_code(user, code, db)
         if not code_ok:
             AuthService._record_failed_attempt(user, ip_address, user_agent, db)
             raise InvalidCredentialsError("Código inválido")
@@ -1433,42 +1433,50 @@ def get_client_info(request: Request) -> Tuple[str, str]:
 
 class TwoFactorAuthService:
     """
-    Servicio para la gestión de autenticación en dos pasos basada en
-    TOTP (Time-based One-Time Password).
+    Autenticación en dos pasos basada en TOTP (Time-based One-Time Password).
+
+    - El secreto TOTP se guarda cifrado con la clave Fernet de la aplicación
+      (ENC_KEY, la misma que cifra los documentos). Los secretos antiguos en
+      texto plano se siguen leyendo, así nadie pierde el 2FA.
+    - Un código TOTP solo se acepta una vez: se guarda el último periodo de
+      30 s usado (`two_factor_last_timestep`) y se rechazan los anteriores o
+      iguales, aunque sigan dentro de la ventana de validez.
+    - Los códigos de respaldo se guardan hasheados y se consumen al usarse.
     """
+
+    ISSUER_NAME = "Curim"
+    _FERNET_PREFIX = "gAAAA"  # todos los tokens Fernet empiezan así
+
+    # ---------- Secreto ----------
 
     @staticmethod
     def generate_secret() -> str:
-        """
-        Genera un secreto aleatorio en formato Base32 apto para TOTP.
-
-        Returns:
-            Cadena Base32 con el secreto generado.
-        """
+        """Genera un secreto aleatorio en Base32 apto para TOTP."""
         return pyotp.random_base32()
 
     @staticmethod
-    def generate_qr_code(
-        user_email: str,
-        secret: str,
-        issuer_name: str = "SecureDocApp",
-    ) -> str:
-        """
-        Genera un código QR codificado en Base64 para configurar la
-        aplicación autenticadora del usuario.
+    def encrypt_secret(secret: str) -> str:
+        from app.services.storage_service import encrypt_bytes
 
-        Args:
-            user_email: Correo del usuario.
-            secret: Secreto TOTP asociado.
-            issuer_name: Nombre del emisor mostrado en la aplicación.
+        return encrypt_bytes(secret.encode()).decode()
 
-        Returns:
-            Cadena Base64 con la imagen PNG del código QR.
-        """
+    @staticmethod
+    def decrypt_secret(stored: Optional[str]) -> Optional[str]:
+        """Devuelve el secreto en claro. Acepta valores antiguos sin cifrar."""
+        if not stored:
+            return None
+        if not stored.startswith(TwoFactorAuthService._FERNET_PREFIX):
+            return stored  # secreto antiguo en texto plano (Base32)
+        from app.services.storage_service import decrypt_bytes
+
+        return decrypt_bytes(stored.encode()).decode()
+
+    @staticmethod
+    def generate_qr_code(user_email: str, secret: str) -> str:
+        """Código QR (PNG en Base64) para la aplicación autenticadora."""
         totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(
-            name=user_email, issuer_name=issuer_name
+            name=user_email, issuer_name=TwoFactorAuthService.ISSUER_NAME
         )
-
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -1478,192 +1486,182 @@ class TwoFactorAuthService:
         )
         qr.add_data(totp_uri)
         qr.make(fit=True)
-
         img = qr.make_image(fill_color="black", back_color="white")
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
         return base64.b64encode(buffer.getvalue()).decode()
 
+    # ---------- Códigos TOTP ----------
+
     @staticmethod
-    def verify_totp_code(
-        secret: str, code: str, window: int = 1
-    ) -> bool:
-        """
-        Verifica un código TOTP contra el secreto proporcionado.
-
-        Args:
-            secret: Secreto TOTP del usuario.
-            code: Código introducido por el usuario.
-            window: Ventana de tiempo permitida, en número de periodos.
-
-        Returns:
-            `True` si el código es válido.
-        """
+    def _matching_timestep(secret: str, code: str, window: int = 1) -> Optional[int]:
+        """Periodo de 30 s al que corresponde el código, o None si no es válido."""
+        code = (code or "").strip()
+        if not secret or not code.isdigit() or len(code) != 6:
+            return None
         totp = pyotp.TOTP(secret)
-        return totp.verify(code, valid_window=window)
+        # Periodo actual a partir del epoch. No usar totp.timecode(datetime):
+        # convierte con mktime (hora local) y desplaza el periodo.
+        current = int(time.time()) // totp.interval
+        for offset in range(-window, window + 1):
+            step = current + offset
+            if secrets.compare_digest(totp.generate_otp(step), code):
+                return step
+        return None
+
+    @staticmethod
+    def verify_user_totp(user: User, code: str, secret: Optional[str] = None) -> bool:
+        """
+        Verifica un código TOTP del usuario y lo marca como usado.
+
+        `secret` permite verificar contra el secreto pendiente de confirmar.
+        El llamador debe hacer commit de la sesión.
+        """
+        if secret is None:
+            secret = TwoFactorAuthService.decrypt_secret(user.two_factor_secret)
+        step = TwoFactorAuthService._matching_timestep(secret, code)
+        if step is None:
+            return False
+        last = user.two_factor_last_timestep
+        if last is not None and step <= last:
+            return False  # código ya usado (reintento o captura)
+        user.two_factor_last_timestep = step
+        return True
+
+    @staticmethod
+    def verify_user_code(user: User, code: str, db: Session) -> bool:
+        """Acepta un código de la aplicación o un código de respaldo."""
+        return TwoFactorAuthService.verify_user_totp(
+            user, code
+        ) or TwoFactorAuthService.verify_backup_code(user, code, db)
+
+    # ---------- Flujo de activación ----------
 
     @staticmethod
     def enable_2fa_for_user(user: User, db: Session) -> Tuple[str, str]:
         """
-        Inicia el proceso de habilitación de 2FA para un usuario.
-
-        Genera un secreto temporal y devuelve el código QR para que el
-        usuario lo escanee. La habilitación definitiva se confirma con
-        `confirm_2fa_setup`.
-
-        Args:
-            user: Usuario al que se le habilita 2FA.
-            db: Sesión de base de datos.
-
-        Returns:
-            Tupla `(secret, qr_code_base64)`.
+        Inicia la activación: guarda un secreto pendiente (cifrado) y devuelve
+        `(secreto, qr_base64)`. Se activa con `confirm_2fa_setup`.
         """
         secret = TwoFactorAuthService.generate_secret()
-        user.two_factor_secret_temp = secret
-        user.two_factor_enabled = False
+        user.two_factor_secret_temp = TwoFactorAuthService.encrypt_secret(secret)
         db.commit()
-
-        qr_code = TwoFactorAuthService.generate_qr_code(
-            user.email, secret
-        )
-        return secret, qr_code
+        return secret, TwoFactorAuthService.generate_qr_code(user.email, secret)
 
     @staticmethod
-    def confirm_2fa_setup(
-        user: User, code: str, db: Session
-    ) -> bool:
+    def confirm_2fa_setup(user: User, code: str, db: Session) -> Optional[List[str]]:
         """
-        Confirma la habilitación de 2FA verificando el primer código.
-
-        Args:
-            user: Usuario que completa el flujo de configuración.
-            code: Código TOTP generado por la aplicación autenticadora.
-            db: Sesión de base de datos.
-
-        Returns:
-            `True` si la configuración quedó habilitada.
+        Activa el 2FA si el código es válido y devuelve los códigos de respaldo
+        recién generados (se muestran una sola vez). None si el código falla.
 
         Raises:
-            ValueError: Si no existe una configuración pendiente.
+            ValueError: si no hay una configuración pendiente.
         """
         if not user.two_factor_secret_temp:
             raise ValueError("No hay configuración de 2FA pendiente")
 
-        if TwoFactorAuthService.verify_totp_code(
-            user.two_factor_secret_temp, code
-        ):
-            user.two_factor_secret = user.two_factor_secret_temp
-            user.two_factor_secret_temp = None
-            user.two_factor_enabled = True
-            user.two_factor_enabled_at = datetime.now(timezone.utc)
+        secret = TwoFactorAuthService.decrypt_secret(user.two_factor_secret_temp)
+        user.two_factor_last_timestep = None
+        if not TwoFactorAuthService.verify_user_totp(user, code, secret=secret):
+            return None
 
-            db.add(
-                Log(
-                    user_id=user.id,
-                    action=LogAction.ENABLE_2FA,
-                    detail="Activación de autenticación en dos pasos",
-                )
+        user.two_factor_secret = user.two_factor_secret_temp
+        user.two_factor_secret_temp = None
+        user.two_factor_enabled = True
+        user.two_factor_enabled_at = datetime.now(timezone.utc)
+        codes = TwoFactorAuthService.generate_backup_codes()
+        TwoFactorAuthService._store_backup_codes(user, codes)
+        db.add(
+            Log(
+                user_id=user.id,
+                action=LogAction.two_factor_enabled,
+                detail="Activación de autenticación en dos pasos",
             )
-            db.commit()
-            return True
-
-        return False
+        )
+        db.commit()
+        return codes
 
     @staticmethod
-    def disable_2fa_for_user(
-        user: User, code: str, db: Session
-    ) -> bool:
+    def disable_2fa_for_user(user: User, code: str, db: Session) -> bool:
         """
-        Deshabilita 2FA previa verificación de un código válido.
-
-        Args:
-            user: Usuario que solicita la deshabilitación.
-            code: Código TOTP válido.
-            db: Sesión de base de datos.
-
-        Returns:
-            `True` si la deshabilitación fue exitosa.
+        Desactiva el 2FA con un código de la aplicación o de respaldo.
 
         Raises:
-            ValueError: Si 2FA no está habilitado para el usuario.
+            ValueError: si el 2FA no está activado.
         """
         if not user.two_factor_enabled or not user.two_factor_secret:
             raise ValueError("2FA no está habilitado")
 
-        if TwoFactorAuthService.verify_totp_code(
-            user.two_factor_secret, code
-        ):
-            user.two_factor_enabled = False
-            user.two_factor_secret = None
-            user.two_factor_disabled_at = datetime.now(timezone.utc)
-            db.commit()
-            return True
+        if not TwoFactorAuthService.verify_user_code(user, code, db):
+            db.commit()  # conserva el periodo TOTP usado, si lo hubo
+            return False
 
-        return False
+        user.two_factor_enabled = False
+        user.two_factor_secret = None
+        user.two_factor_secret_temp = None
+        user.two_factor_last_timestep = None
+        user.backup_codes = None
+        user.two_factor_disabled_at = datetime.now(timezone.utc)
+        db.add(
+            Log(
+                user_id=user.id,
+                action=LogAction.two_factor_disabled,
+                detail="Desactivación de autenticación en dos pasos",
+            )
+        )
+        db.commit()
+        return True
+
+    # ---------- Códigos de respaldo ----------
 
     @staticmethod
     def generate_backup_codes(count: int = 8) -> List[str]:
-        """
-        Genera un conjunto de códigos de respaldo para 2FA.
-
-        Args:
-            count: Cantidad de códigos a generar.
-
-        Returns:
-            Lista de códigos en hexadecimal mayúscula.
-        """
+        """Códigos de respaldo de 8 caracteres hexadecimales en mayúscula."""
         return [secrets.token_hex(4).upper() for _ in range(count)]
 
     @staticmethod
-    def save_backup_codes(
-        user: User, codes: List[str], db: Session
-    ) -> None:
-        """
-        Persiste los códigos de respaldo asociados al usuario.
-
-        Los códigos se almacenan hasheados y separados por comas.
-
-        Args:
-            user: Usuario propietario de los códigos.
-            codes: Lista de códigos en texto plano.
-            db: Sesión de base de datos.
-        """
+    def _store_backup_codes(user: User, codes: List[str]) -> None:
+        # Lista JSON de hashes. Antes se unían con comas, pero el hash
+        # bcrypt-sha256 ("$bcrypt-sha256$v=2,t=2b,...") contiene comas y
+        # ningún código de respaldo llegaba a validar.
         from app.services.security_service import hash_password
 
-        hashed_codes = [hash_password(code) for code in codes]
-        user.backup_codes = ",".join(hashed_codes)
-        db.commit()
+        user.backup_codes = json.dumps([hash_password(c) for c in codes])
 
     @staticmethod
-    def verify_backup_code(
-        user: User, code: str, db: Session
-    ) -> bool:
+    def _load_backup_codes(user: User) -> List[str]:
+        if not user.backup_codes or not user.backup_codes.startswith("["):
+            return []  # vacío o formato antiguo (inservible)
+        return json.loads(user.backup_codes)
+
+    @staticmethod
+    def regenerate_backup_codes(user: User, code: str, db: Session) -> Optional[List[str]]:
         """
-        Verifica y consume un código de respaldo.
-
-        Si el código es válido, se elimina de la lista para impedir su
-        reutilización.
-
-        Args:
-            user: Usuario propietario de los códigos.
-            code: Código de respaldo en texto plano.
-            db: Sesión de base de datos.
-
-        Returns:
-            `True` si el código era válido.
+        Sustituye los códigos de respaldo; exige un código válido de la app.
+        None si el código falla.
         """
+        if not TwoFactorAuthService.verify_user_totp(user, code):
+            return None
+        codes = TwoFactorAuthService.generate_backup_codes()
+        TwoFactorAuthService._store_backup_codes(user, codes)
+        db.commit()
+        return codes
+
+    @staticmethod
+    def verify_backup_code(user: User, code: str, db: Session) -> bool:
+        """Verifica y consume un código de respaldo (cada uno sirve una vez)."""
         from app.services.security_service import verify_password
 
-        if not user.backup_codes:
+        code = (code or "").strip().upper()
+        codes = TwoFactorAuthService._load_backup_codes(user)
+        if not code or not codes:
             return False
 
-        codes = user.backup_codes.split(",")
         for index, hashed_code in enumerate(codes):
             if verify_password(code, hashed_code):
                 codes.pop(index)
-                user.backup_codes = ",".join(codes) if codes else None
+                user.backup_codes = json.dumps(codes) if codes else None
                 db.commit()
                 return True
-
         return False

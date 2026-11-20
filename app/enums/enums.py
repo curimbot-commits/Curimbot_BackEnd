@@ -50,6 +50,8 @@ class LogAction(str, Enum):
     document_download = "document_download"
     document_delete = "document_delete"
     error = "error"
+    two_factor_enabled = "two_factor_enabled"
+    two_factor_disabled = "two_factor_disabled"
 
 
 # =========================================================

@@ -206,7 +206,6 @@ class TwoFactorSetupResponse(BaseModel):
     """Respuesta al iniciar configuración de 2FA"""
     secret: str = Field(..., description="Secret key (para entrada manual)")
     qr_code: str = Field(..., description="Código QR en formato data URL")
-    backup_codes: List[str] = Field(..., description="Códigos de respaldo")
     message: str = Field(..., description="Instrucciones para el usuario")
 
     model_config = ConfigDict(
@@ -215,20 +214,18 @@ class TwoFactorSetupResponse(BaseModel):
             "example": {
                 "secret": "JBSWY3DPEHPK3PXP",
                 "qr_code": "data:image/png;base64,iVBORw0KGgoAAAANS...",
-                "backup_codes": [
-                    "A1B2C3D4",
-                    "E5F6G7H8",
-                    "I9J0K1L2",
-                    "M3N4O5P6",
-                    "Q7R8S9T0",
-                    "U1V2W3X4",
-                    "Y5Z6A7B8",
-                    "C9D0E1F2"
-                ],
                 "message": "Escanea el código QR con Google Authenticator"
             }
         }
     )
+
+
+class TwoFactorConfirmResponse(BaseModel):
+    """2FA activado. Los códigos de respaldo se generan aquí y se muestran una sola vez."""
+    message: str
+    enabled: bool
+    enabled_at: datetime
+    backup_codes: List[str] = Field(..., description="Códigos de respaldo (solo se muestran ahora)")
 
 class TwoFactorConfirmRequest(BaseModel):
     """Request para confirmar configuración de 2FA"""
@@ -296,43 +293,6 @@ class BackupCodesResponse(BaseModel):
     )
 
 
-class TwoFactorStatusResponse(BaseModel):
-    """Estado de 2FA del usuario"""
-    enabled: bool = Field(..., description="Si 2FA está habilitado")
-    enabled_at: Optional[datetime] = Field(None, description="Cuándo se habilitó")
-    has_backup_codes: bool = Field(..., description="Si tiene códigos de respaldo")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class LoginWith2FARequest(BaseModel):
-    """Request de login con 2FA"""
-    email: EmailStr = Field(..., description="Email del usuario")
-    password: str = Field(..., description="Contraseña")
-    totp_code: Optional[str] = Field(None, description="Código 2FA si está habilitado")
-
-    @field_validator('email')
-    def email_must_be_lowercase(cls, v):
-        return v.lower().strip()
-
-    @field_validator('totp_code')
-    def validate_totp_code(cls, v):
-        if v is not None:
-            # Permitir código TOTP (6 dígitos) o código de respaldo (8 caracteres)
-            if not (len(v) == 6 and v.isdigit()) and not (len(v) == 8):
-                raise ValueError('Código 2FA inválido')
-        return v.upper() if v else None
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={
-            "example": {
-                "email": "usuario@example.com",
-                "password": "MiPassword123!",
-                "totp_code": "123456"
-            }
-        }
-    )
 # ========================================
 #  ESQUEMAS DE PasswordResetRequest
 # ========================================

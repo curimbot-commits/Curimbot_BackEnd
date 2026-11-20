@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import BigInteger, Boolean, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
@@ -43,8 +43,10 @@ class User(Base, TimestampMixin):
     locked_until = Column(DateTime(timezone=True), nullable=True)
 
     two_factor_enabled = Column(Boolean, default=False, nullable=False)
-    two_factor_secret = Column(String(64), nullable=True)
-    two_factor_secret_temp = Column(String(64), nullable=True)
+    two_factor_secret = Column(String(255), nullable=True)  # cifrado (Fernet)
+    two_factor_secret_temp = Column(String(255), nullable=True)  # cifrado (Fernet)
+    # Último periodo TOTP (30 s) aceptado: impide reutilizar un código
+    two_factor_last_timestep = Column(BigInteger, nullable=True)
     two_factor_enabled_at = Column(DateTime(timezone=True), nullable=True)
     two_factor_disabled_at = Column(DateTime(timezone=True), nullable=True)
     backup_codes = Column(Text, nullable=True)
