@@ -39,14 +39,14 @@ from app.schemas.Curim_schemas import (
     DocumentSyncResponse
 )
 from app.services.auth_service import get_current_user
-from app.services.Curim import CurimService
+from app.services.Curim.Curim_service import get_curim_service
 from app.models.models import User
 from app.db.database import SessionLocal
 
 router = APIRouter(prefix="/assistant", tags=["Curim Assistant"])
 
 # Instancia global del servicio
-Curim_service = CurimService()
+Curim_service = get_curim_service()
 logger = logging.getLogger(__name__)
 
 
@@ -180,7 +180,8 @@ def ask_Curim(
             user=current_user,
             question=request.question,
             document_ids=request.document_ids,
-            use_cache=request.use_cache
+            use_cache=request.use_cache,
+            conversation_id=request.conversation_id,
         )
         
         return CurimResponse(**result)

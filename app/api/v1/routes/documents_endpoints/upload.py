@@ -40,7 +40,7 @@ from app.models.models import CurimDocumentIndex, Document
 from app.schemas.document_schemas import (
     DocumentCreate, DocumentOut, DocumentUploadResponse, UserDocumentSettings
 )
-from app.services.Curim.Curim_service import CurimService
+from app.services.Curim.Curim_service import get_curim_service
 from app.services.auth_service import get_current_user
 from app.services.document_service import DocumentService
 from app.services.handlers.base import DocumentContext, DocumentHandler, verify_chain_integrity
@@ -51,7 +51,6 @@ from app.services.handlers.validate_file import ValidateFileHandler
 from app.services.handlers.index_Curim import IndexCurimHandler
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-Curim_service = CurimService()
 
 
 def get_db():
@@ -298,6 +297,14 @@ async def upload_documents(
         f"{len(valid_docs)} successful, {len(failed_files)} failed, "
         f"{Curim_indexed_count} indexed in Curim"
     )
+
+    # Respuestas cacheadas ("no encontré información…" o sin este documento)
+    # quedan obsoletas; un documento público afecta a todos los usuarios.
+    if Curim_indexed_count > 0:
+        try:
+            get_curim_service().on_documents_indexed()
+        except Exception as e:
+            logging.warning(f"[Correlation ID: {correlation_id}] No se pudo invalidar la caché: {e}")
 
     # Retornar respuesta con información de Curim
     return DocumentUploadResponse(

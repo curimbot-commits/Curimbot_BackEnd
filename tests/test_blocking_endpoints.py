@@ -27,7 +27,7 @@ def test_assistant_query_works_from_threadpool(client, make_user, monkeypatch):
 
     captured = {}
 
-    def fake_ask(db, user, question, document_ids, use_cache):
+    def fake_ask(db, user, question, document_ids, use_cache, conversation_id=None):
         captured["question"] = question
         return {
             "answer": "respuesta", "sources": [], "confidence": 0.9,
@@ -40,3 +40,79 @@ def test_assistant_query_works_from_threadpool(client, make_user, monkeypatch):
     r = client.post("/assistant/query", json={"question": "¿hola?"})
     assert r.status_code == 200, r.text
     assert captured["question"] == "¿hola?"
+
+
+def test_llm_failure_returns_500_and_logs_error(client, make_user, db, monkeypatch):
+    """Si Gemini falla, no se devuelve un texto de error como respuesta válida."""
+    from app.models.models import AIInteractionLog
+    from tests.conftest import login
+
+    service = assistant.Curim_service
+
+    def boom(question, documents):
+        raise RuntimeError("404 model no longer available")
+
+    monkeypatch.setattr(service.rag_engine, "query", boom)
+    monkeypatch.setattr(service, "_get_user_documents", lambda db, uid, ids: [])
+    monkeypatch.setattr(service.cache_manager, "get", lambda **kw: None, raising=False)
+
+    user = make_user()
+    assert login(client, user.email).status_code == 200
+    r = client.post("/assistant/query", json={"question": "¿algo?", "use_cache": False})
+    assert r.status_code == 500
+    assert "no longer available" not in r.text
+
+    db.rollback()
+    log = db.query(AIInteractionLog).filter(AIInteractionLog.user_id == user.id).one()
+    assert log.status.value == "error"
+
+
+def _engine_with(responses):
+    """VoiceRAGEngine sin inicializar, con un cliente falso de google-genai."""
+    from types import SimpleNamespace
+
+    from app.services.Curim.rag_engine import VoiceRAGEngine
+
+    calls = []
+
+    def generate_content(model, contents, config):
+        calls.append(model)
+        result = responses[model]
+        if isinstance(result, Exception):
+            raise result
+        return SimpleNamespace(text=result)
+
+    engine = VoiceRAGEngine.__new__(VoiceRAGEngine)
+    engine.text_client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    return engine, calls
+
+
+def _api_error(code):
+    from google.genai import errors
+
+    return errors.APIError(code, {"error": {"code": code, "message": "x", "status": "X"}})
+
+
+def test_text_generation_falls_back_when_model_unavailable(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "GEMINI_TEXT_MODEL", "principal")
+    monkeypatch.setattr(settings, "GEMINI_TEXT_FALLBACK_MODELS", "saturado,respaldo")
+    engine, calls = _engine_with({
+        "principal": _api_error(404),   # "no longer available to new users"
+        "saturado": _api_error(503),    # high demand
+        "respaldo": "respuesta",
+    })
+    assert engine._generate_text("p") == "respuesta"
+    assert calls == ["principal", "saturado", "respaldo"]
+
+
+def test_text_generation_does_not_retry_auth_errors(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "GEMINI_TEXT_MODEL", "principal")
+    monkeypatch.setattr(settings, "GEMINI_TEXT_FALLBACK_MODELS", "respaldo")
+    engine, calls = _engine_with({"principal": _api_error(403), "respaldo": "no"})
+    with pytest.raises(Exception):
+        engine._generate_text("p")
+    assert calls == ["principal"]

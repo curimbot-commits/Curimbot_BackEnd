@@ -3,8 +3,8 @@
 # =========================================================
 from .auth_schemas import Token
 from typing import List, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from datetime import datetime, timezone
 
 from app.schemas.auth_schemas import ChangePasswordRequest
 from app.enums.enums import FileType, LogAction, AIChannel, AIInteractionStatus
@@ -57,6 +57,13 @@ class AIInteractionLogOut(BaseModel):
     timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("timestamp")
+    @classmethod
+    def _timestamp_utc(cls, v: datetime) -> datetime:
+        # MySQL devuelve DATETIME sin zona; se guarda en UTC (utc_now).
+        # Sin zona, el navegador lo interpretaría como hora local.
+        return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
 
 
 class AIInteractionFilters(BaseModel):
