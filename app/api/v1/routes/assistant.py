@@ -72,7 +72,7 @@ def get_db():
 # ===========================
 
 @router.post("/query", response_model=CurimResponse, dependencies=[Depends(rate_limit(30, 60))])
-async def ask_Curim(
+def ask_Curim(
     request: CurimQueryRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -194,7 +194,7 @@ async def ask_Curim(
 
 
 @router.get("/history", response_model=List[ConversationHistory])
-async def get_conversation_history(
+def get_conversation_history(
     conversation_id: Optional[int] = None,
     limit: int = 50,
     current_user: User = Depends(get_current_user),
@@ -307,7 +307,7 @@ async def get_conversation_history(
 # ===========================
 
 @router.post("/documents/sync", response_model=DocumentSyncResponse)
-async def sync_documents(
+def sync_documents(
     request: DocumentSyncRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -392,7 +392,7 @@ async def sync_documents(
 # ===========================
 
 @router.get("/status", response_model=CurimStatus)
-async def get_Curim_status(
+def get_Curim_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -448,7 +448,7 @@ async def get_Curim_status(
 
 
 @router.delete("/cache")
-async def clear_cache(
+def clear_cache(
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -484,7 +484,7 @@ async def clear_cache(
 
 
 @router.get("/cache/stats")
-async def get_cache_stats(
+def get_cache_stats(
     current_user: User = Depends(get_current_user)
 ):
     """

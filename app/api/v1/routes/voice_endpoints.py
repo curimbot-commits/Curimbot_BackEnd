@@ -126,7 +126,7 @@ async def get_voice_token(current_user=Depends(get_current_user)):
 
 
 @router.post("/context", response_model=ContextResponse, dependencies=[Depends(rate_limit(60, 60))])
-async def get_voice_context(
+def get_voice_context(
     request: ContextRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -175,7 +175,7 @@ class VoiceInteractionLogResponse(BaseModel):
 
 
 @router.post("/log-interaction", response_model=VoiceInteractionLogResponse)
-async def log_voice_interaction(
+def log_voice_interaction(
     payload: VoiceInteractionLogRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

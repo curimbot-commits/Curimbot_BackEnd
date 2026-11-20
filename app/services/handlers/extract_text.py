@@ -40,6 +40,7 @@ Instalación de spaCy:
     python -m spacy download en_core_web_md
 """
 
+import asyncio
 import logging
 import io
 from typing import Dict, List, Tuple, Optional
@@ -235,13 +236,13 @@ class ExtractTextHandler(DocumentHandler):
             
             # Detectar tipo y extraer
             if mimetype == 'application/pdf' or filename.lower().endswith('.pdf'):
-                text = self._extract_from_pdf(content, correlation_id)
+                text = await asyncio.to_thread(self._extract_from_pdf, content, correlation_id)
             
             elif mimetype in [
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'application/msword'
             ] or filename.lower().endswith(('.docx', '.doc')):
-                text = self._extract_from_docx(content, correlation_id)
+                text = await asyncio.to_thread(self._extract_from_docx, content, correlation_id)
             
             elif mimetype == 'text/plain' or filename.lower().endswith('.txt'):
                 text = content.decode('utf-8', errors='ignore')
@@ -268,7 +269,8 @@ class ExtractTextHandler(DocumentHandler):
             
             # Procesar con spaCy si está habilitado
             if self.enable_nlp and text:
-                nlp_data = self._process_with_spacy(text, correlation_id)
+                # CPU intensivo: fuera del event loop
+                nlp_data = await asyncio.to_thread(self._process_with_spacy, text, correlation_id)
                 context.nlp_data = nlp_data
             else:
                 context.nlp_data = None
