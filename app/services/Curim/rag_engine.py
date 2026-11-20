@@ -33,6 +33,8 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from google import genai as genai_client
 from google.genai import types
+from google.genai import errors as genai_errors
+import httpx
 import sounddevice as sd
 import soundfile as sf
 from io import BytesIO
@@ -135,7 +137,7 @@ class VoiceRAGEngine:
                 genai.configure(api_key=self.gemini_api_key)
 
                 self.text_model = genai.GenerativeModel(
-                    'gemini-2.5-flash',
+                    settings.GEMINI_TEXT_MODEL,
                     safety_settings={
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -144,11 +146,20 @@ class VoiceRAGEngine:
                     }
                 )
 
+                # Generación de texto del chat con google-genai (el SDK
+                # google.generativeai está deprecado y se cuelga con modelos 3.x)
+                self.text_client = genai_client.Client(
+                    api_key=self.gemini_api_key,
+                    http_options=types.HttpOptions(
+                        timeout=settings.GEMINI_TEXT_TIMEOUT_SECONDS * 1000
+                    ),
+                )
+
                 self.live_client = genai_client.Client(
                     api_key=self.gemini_api_key,
                     http_options={'api_version': 'v1alpha'}
                 )
-                self.live_model = 'gemini-2.5-flash-native-audio-preview-12-2025'
+                self.live_model = settings.GEMINI_LIVE_MODEL
 
                 self.live_config = {
                     "response_modalities": ["AUDIO"],
@@ -271,6 +282,53 @@ class VoiceRAGEngine:
     # CONSULTA TEXTO
     # ============================================================
 
+    # Errores del proveedor que justifican probar el siguiente modelo
+    RETRYABLE_STATUS = {404, 429, 500, 502, 503, 504}
+
+    def _text_models(self) -> List[str]:
+        primary = settings.GEMINI_TEXT_MODEL
+        fallbacks = [m.strip() for m in settings.GEMINI_TEXT_FALLBACK_MODELS.split(",")]
+        return [primary] + [m for m in fallbacks if m and m != primary]
+
+    def _generate_text(self, prompt: str) -> str:
+        """
+        Genera la respuesta con GEMINI_TEXT_MODEL; si falla por saturación,
+        timeout o modelo no disponible, prueba los modelos de respaldo.
+        Cualquier otro error (p. ej. API key inválida) se propaga.
+        """
+        config = types.GenerateContentConfig(
+            temperature=0.2,
+            top_p=0.8,
+            max_output_tokens=1024,
+            safety_settings=[
+                types.SafetySetting(category=c, threshold="BLOCK_NONE")
+                for c in (
+                    "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT",
+                )
+            ],
+        )
+        last_error: Optional[Exception] = None
+        for model in self._text_models():
+            try:
+                response = self.text_client.models.generate_content(
+                    model=model, contents=prompt, config=config
+                )
+                if last_error is not None:
+                    logger.warning(f"Respuesta generada con modelo de respaldo {model}")
+                return response.text or ""
+            except genai_errors.APIError as e:
+                if e.code not in self.RETRYABLE_STATUS:
+                    raise
+                logger.warning(f"Modelo {model} falló ({e.code}); probando el siguiente")
+                last_error = e
+            except httpx.TimeoutException as e:
+                logger.warning(f"Modelo {model} excedió el timeout; probando el siguiente")
+                last_error = e
+        raise last_error
+
     def query(
         self,
         question: str,
@@ -341,16 +399,7 @@ PREGUNTA:
 
 RESPUESTA:"""
 
-            response = self.text_model.generate_content(
-                prompt,
-                generation_config={
-                    'temperature': 0.2,
-                    'top_p': 0.8,
-                    'max_output_tokens': 1024,
-                }
-            )
-
-            answer = response.text if response.text else "No pude generar una respuesta."
+            answer = self._generate_text(prompt) or "No pude generar una respuesta."
 
             # Fuentes: agrupar por documento, conservar el mejor score
             sources_by_doc: Dict[int, Dict] = {}
@@ -383,13 +432,11 @@ RESPUESTA:"""
             return answer, confidence, source_ids, sources_info
 
         except Exception as e:
+            # Se relanza: CurimService registra la interacción como error y el
+            # endpoint responde 500. Antes se devolvía un texto de error como si
+            # fuera una respuesta válida (200 y status=success).
             logger.error(f"Error en query: {e}", exc_info=True)
-            return (
-                "Ocurrió un error al procesar tu pregunta.",
-                0.0,
-                [],
-                []
-            )
+            raise
 
     async def query_by_voice(
         self,

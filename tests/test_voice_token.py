@@ -34,6 +34,7 @@ def test_voice_token_returns_ephemeral_token_not_api_key(client, make_user, monk
     cfg = captured["config"]
     assert cfg.uses == 1
     assert cfg.live_connect_constraints.model == voice_endpoints.GEMINI_LIVE_MODEL
+    assert body["model"] == voice_endpoints.GEMINI_LIVE_MODEL  # el frontend usa este
 
 
 def test_voice_token_unavailable_without_api_key(client, make_user, monkeypatch):

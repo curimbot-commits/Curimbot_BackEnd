@@ -12,6 +12,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.rate_limit import rate_limit
+from app.core.config import settings
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -48,6 +49,7 @@ def get_db():
 class VoiceTokenResponse(BaseModel):
     token: str = Field(..., description="Token efímero de Gemini Live (auth_tokens/...)")
     expire_time: datetime = Field(..., description="Caducidad del token (UTC)")
+    model: str = Field(..., description="Modelo de Gemini Live que permite el token")
 
 
 class ContextRequest(BaseModel):
@@ -71,9 +73,7 @@ class ContextResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Modelo de Gemini Live que el token permite usar (bloqueado en el token).
-GEMINI_LIVE_MODEL = os.getenv(
-    "GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025"
-)
+GEMINI_LIVE_MODEL = settings.GEMINI_LIVE_MODEL
 # Ventana para abrir la sesión y vida máxima de la sesión abierta.
 VOICE_TOKEN_NEW_SESSION_SECONDS = 60
 VOICE_TOKEN_TTL_MINUTES = 30
@@ -122,7 +122,7 @@ async def get_voice_token(current_user=Depends(get_current_user)):
         logger.error("Gemini devolvió un token efímero sin nombre")
         raise HTTPException(status_code=503, detail="Servicio de voz no disponible")
 
-    return VoiceTokenResponse(token=token.name, expire_time=expire_time)
+    return VoiceTokenResponse(token=token.name, expire_time=expire_time, model=GEMINI_LIVE_MODEL)
 
 
 @router.post("/context", response_model=ContextResponse, dependencies=[Depends(rate_limit(60, 60))])

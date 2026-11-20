@@ -73,6 +73,14 @@ class Settings(BaseSettings):
 
     # ── Curim / Gemini ──────────────────────────────────────────────────────
     GEMINI_API_KEY: Optional[str] = None
+    # Modelos (cambiables por entorno sin desplegar código). Las keys nuevas
+    # no pueden usar gemini-2.5-flash ("no longer available to new users").
+    GEMINI_TEXT_MODEL: str = "gemini-3.5-flash"
+    # Se prueban en orden si el principal falla por saturación (429/5xx),
+    # timeout o modelo no disponible (404).
+    GEMINI_TEXT_FALLBACK_MODELS: str = "gemini-3.8-flash,gemini-3.5-flash-lite"
+    GEMINI_TEXT_TIMEOUT_SECONDS: int = 30
+    GEMINI_LIVE_MODEL: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     Curim_STORAGE_PATH: str = "./storage/Curim_data"
     Curim_CACHE_ENABLED: bool = True
     Curim_CACHE_TTL_DAYS: int = 7
