@@ -24,7 +24,7 @@ Integración con arquitectura existente:
 import logging
 import httpx
 from datetime import datetime, timezone
-from typing import Optional, Tuple, cast, Any
+from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.models import User, Role

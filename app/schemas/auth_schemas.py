@@ -3,15 +3,10 @@
 Este archivo contiene todos los esquemas Pydantic para autenticación y autorización.
 """
 
-import re
 from pydantic import BaseModel, Field, EmailStr, field_validator, ConfigDict
 from typing import Optional, List
-from datetime import datetime, timezone
-from enum import Enum
-from app.enums.enums import UserRole
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
-from app.schemas.common_schemas import LoginAttemptDetails
-from app.schemas.user_schemas import UserInfoResponse
 
 # ========================================
 #  EXCEPCIONES PERSONALIZADAS
@@ -61,36 +56,6 @@ class PermissionDeniedError(AuthServiceError):
     pass
 
 
-class InvalidTokenError(AuthServiceError):
-    """Invalid token error - for reset, verification, etc."""
-    pass
-
-
-class EmailAlreadyInUseError(AuthServiceError):
-    """Email is already in use by another account"""
-    pass
-
-
-class InvalidTwoFactorCodeError(AuthServiceError):
-    """Invalid 2FA code provided"""
-    pass
-
-
-class UnsupportedProviderError(AuthServiceError):
-    """Unsupported social authentication provider"""
-    pass
-
-
-class InvalidSocialTokenError(AuthServiceError):
-    """Invalid token from social provider"""
-    pass
-
-
-class RateLimitError(AuthServiceError):
-    """Rate limit exceeded"""
-    pass
-
-
 # ========================================
 #  ESQUEMAS DE AUTENTICACIÓN
 # ========================================
@@ -103,16 +68,6 @@ class Token(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-class TokenData(BaseModel):
-    """Datos contenidos en el token"""
-    sub: str = Field(..., description="Subject (user ID)")
-    role: str = Field(..., description="User role")  # Ya no es enum
-    email: Optional[str] = Field(None, description="User email")
-    exp: Optional[datetime] = Field(None, description="Expiration time")
-    iat: Optional[datetime] = Field(None, description="Issued at")
-
-    model_config = ConfigDict(from_attributes=True)
 
 class RefreshTokenRequest(BaseModel):
     """Request para renovar token"""
@@ -185,45 +140,6 @@ class ResetPasswordConfirm(BaseModel):
 
 
 # ========================================
-#  ESQUEMAS DE ESTADÍSTICAS Y MONITOREO
-# ========================================
-
-class SecurityAuditResponse(BaseModel):
-    """Respuesta de auditoría de seguridad"""
-    user_id: int
-    user_email: str
-    recent_login_attempts: List[LoginAttemptDetails]
-    password_last_changed: Optional[datetime] = None
-    account_locked: bool = False
-    failed_attempts_count: int = 0
-    last_successful_login: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# ========================================
-#  ESQUEMAS DE ERRORES
-# ========================================
-
-class AuthErrorResponse(BaseModel):
-    """Respuesta de error de autenticación"""
-    error_code: str = Field(..., description="Error code identifier")
-    message: str = Field(..., description="Human-readable error message")
-    details: Optional[dict] = Field(None, description="Additional error details")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    model_config = ConfigDict(from_attributes=True)
-
-class BulkUserOperation(BaseModel):
-    """Operación en lote sobre usuarios"""
-    user_ids: List[int] = Field(..., min_length=1, max_length=100)
-    operation: str = Field(..., pattern="^(activate|deactivate|delete)$")
-    reason: Optional[str] = Field(None, description="Reason for the operation")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# ========================================
 #  ESQUEMAS DE SESIÓN Y SEGURIDAD
 # ========================================
 
@@ -273,161 +189,12 @@ class TwoFactorVerifyRequest(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-class DeviceInfo(BaseModel):
-    """Información del dispositivo"""
-    device_id: str
-    device_name: str
-    device_type: str = Field(..., pattern="^(mobile|desktop|tablet|other)$")
-    os_info: Optional[str] = None
-    browser_info: Optional[str] = None
-    first_seen: datetime
-    last_seen: datetime
-    is_trusted: bool = False
-
-    model_config = ConfigDict(from_attributes=True)
 
 class TrustedDeviceRequest(BaseModel):
     """Request para marcar dispositivo como confiable"""
     device_id: str
     trust: bool = True
     remember_for_days: int = Field(30, ge=1, le=365)
-
-    model_config = ConfigDict(from_attributes=True)
-
-# ========================================
-#  ESQUEMAS PARA TESTING Y DEBUG
-# ========================================
-class TokenDebugInfo(BaseModel):
-    """Información de debug del token (solo para desarrollo)"""
-    token_type: str
-    issued_at: datetime
-    expires_at: datetime
-    user_id: str
-    user_role: str
-    is_expired: bool
-    time_until_expiry: Optional[str] = None
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={
-            "example": {
-                "token_type": "access_token",
-                "issued_at": "2023-01-01T12:00:00Z",
-                "expires_at": "2023-01-01T13:00:00Z",
-                "user_id": "123",
-                "user_role": "user",
-                "is_expired": False,
-                "time_until_expiry": "45 minutes"
-            }
-        }
-    )
-
-class TestUserCredentials(BaseModel):
-    """Credenciales de usuario de prueba (solo para testing)"""
-    email: EmailStr
-    password: str
-    role: str = "admin"
-    name: str = "Test admin"
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_schema_extra={
-            "example": {
-                "email": "test@example.com",
-                "password": "TestPass123!",
-                "role": "admin",
-                "name": "Test admin"
-            }
-        }
-    )
-
-# ========================================
-#  ESQUEMAS DE CONFIGURACIÓN
-# ========================================
-class AuthConfig(BaseModel):
-    """Configuración del sistema de autenticación"""
-    password_requirements: dict
-    session_settings: dict
-    security_policies: dict
-    feature_flags: dict
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# ========================================
-#  ESQUEMAS PARA WEBHOOKS
-# ========================================
-
-class WebhookEvent(BaseModel):
-    """Evento de webhook"""
-    event_id: str
-    event_type: str
-    timestamp: datetime
-    user_id: Optional[int] = None
-    data: dict
-    metadata: Optional[dict] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-class WebhookSubscription(BaseModel):
-    """Suscripción a webhook"""
-    subscription_id: str
-    url: str
-    events: List[str]
-    secret: Optional[str] = None
-    active: bool = True
-    created_at: datetime
-    last_delivery: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-# ========================================
-#  VALIDADORES PERSONALIZADOS ADICIONALES
-# ========================================
-
-def validate_strong_password(password: str) -> str:
-    """Validador personalizado para contraseñas fuertes"""
-    if len(password) < 8:
-        raise ValueError('La contraseña debe tener al menos 8 caracteres')
-
-    if not re.search(r'[A-Z]', password):
-        raise ValueError('La contraseña debe contener al menos una letra mayúscula')
-
-    if not re.search(r'[a-z]', password):
-        raise ValueError('La contraseña debe contener al menos una letra minúscula')
-
-    if not re.search(r'[0-9]', password):
-        raise ValueError('La contraseña debe contener al menos un dígito')
-
-    if not re.search(r'[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]', password):
-        raise ValueError('La contraseña debe contener al menos un carácter especial')
-
-    # Verificar palabras comunes
-    common_passwords = ['password', '123456', 'qwerty', 'admin', 'letmein']
-    if any(common in password.lower() for common in common_passwords):
-        raise ValueError('La contraseña no puede contener palabras comunes')
-
-    return password
-
-
-# ========================================
-#  ESQUEMAS PARA MOBILE APP
-# ========================================
-
-class MobileLoginRequest(LoginRequest):
-    """Request de login específico para mobile"""
-    device_token: Optional[str] = Field(None, description="Push notification device token")
-    device_info: Optional[dict] = Field(None, description="Device information")
-    app_version: Optional[str] = Field(None, description="Mobile app version")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class MobileAuthResponse(Token):
-    """Respuesta de autenticación para mobile"""
-    user_profile: UserInfoResponse
-    app_config: Optional[dict] = Field(None, description="App-specific configuration")
-    force_update: bool = Field(False, description="Whether app update is required")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -571,4 +338,3 @@ class LoginWith2FARequest(BaseModel):
 # ========================================
 class PasswordResetRequest(BaseModel):
     email: EmailStr
-    

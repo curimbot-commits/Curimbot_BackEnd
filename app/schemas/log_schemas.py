@@ -2,12 +2,12 @@
 # IMPORTACIONES NECESARIAS
 # =========================================================
 from .auth_schemas import Token
-from typing import List, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime, timezone
 
 from app.schemas.auth_schemas import ChangePasswordRequest
-from app.enums.enums import FileType, LogAction, AIChannel, AIInteractionStatus
+from app.enums.enums import LogAction, AIChannel, AIInteractionStatus
 from app.schemas.common_schemas import AuthStatsResponse, LoginStatsResponse
 from app.schemas.user_schemas import SecurityAlert, UserCreate, UserInfoResponse
 
@@ -21,17 +21,6 @@ class LogCreate(BaseModel):
     user_id: int
     action: LogAction
     detail: str
-
-
-class LogOut(BaseModel):
-    """Esquema para un log de sistema"""
-    id: int
-    user_id: int
-    action: LogAction
-    detail: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 # =========================================================
@@ -83,19 +72,6 @@ class AIInteractionFilters(BaseModel):
             except ValueError:
                 raise ValueError(f"Canal inválido: {v}")
         return v
-
-
-class PaginatedAIInteractionsResponse(BaseModel):
-    """Respuesta paginada de interacciones IA"""
-    items: List[AIInteractionLogOut]
-    total: int
-    skip: int
-    limit: int
-    has_next: bool
-    has_prev: bool
-    filters_applied: Optional[AIInteractionFilters] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 # =========================================================

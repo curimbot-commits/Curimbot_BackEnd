@@ -15,7 +15,6 @@ import logging
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from app.models.models import Document
 from app.services.Curim.rag_engine import VoiceRAGEngine
 
 logger = logging.getLogger(__name__)

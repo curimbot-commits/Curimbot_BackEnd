@@ -15,14 +15,13 @@ Características:
 """
 
 import logging
-from typing import List, Optional, Annotated
+from typing import Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.models.models import User
 from app.schemas.document_schemas import DocumentSearchOut, PaginatedDocumentsResponse
 from app.services.auth_service import get_current_user
-from app.db.crud import crud
 from app.db.database import SessionLocal, get_db
 from app.enums.enums import FileType
 from app.services.document_service import DocumentService

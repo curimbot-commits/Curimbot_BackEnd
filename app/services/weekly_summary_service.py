@@ -4,9 +4,8 @@ app/services/weekly_summary_service.py
 """
 
 import logging
-from typing import List
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.models.models import User, UserPreferences
 from app.services.document_service import DocumentService

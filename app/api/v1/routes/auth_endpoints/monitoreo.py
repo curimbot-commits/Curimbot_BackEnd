@@ -7,26 +7,16 @@ Los endpoints de estadísticas requieren privilegios de administrador.
 """
 
 from app.services.auth_service import AuthService, require_admin
-from app.services.security_service import verify_password
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
-from .....schemas.auth_schemas import (
-    ActiveSessionsResponse, BackupCodesResponse, RefreshTokenRequest, 
-    ResetPasswordRequest, Token, TwoFactorConfirmRequest, TwoFactorDisableRequest, 
-    TwoFactorSetupResponse, TwoFactorVerifyRequest
-)
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Body
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.models import Role, User
-from app.enums.enums import UserRole
 
-from app.schemas.common_schemas import LoginStatsResponse
-from app.schemas.user_schemas import UserCreate, UserInfoResponse, UserManagementResponse
 
 
 # ========================================
@@ -208,7 +198,6 @@ def get_auth_stats_summary(
         - No incluye información sensible de usuarios individuales
     """
     try:
-        from sqlalchemy import func
         from datetime import timedelta
         
         # Estadísticas de usuarios

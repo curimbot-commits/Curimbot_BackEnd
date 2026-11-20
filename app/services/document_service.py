@@ -1,15 +1,12 @@
 import datetime
 import json
 import logging
-import io
 import base64
-from datetime import date, timedelta
-from fastapi import UploadFile, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError, DataError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from typing import List, Optional, Tuple
-import traceback
 from contextlib import contextmanager
 
 from app.db.crud import crud
@@ -19,17 +16,8 @@ from app.enums.enums import FileType, AIChannel, AIInteractionStatus
 from app.schemas.dashboard_schemas import ChartDataPoint, DashboardStats
 from app.schemas.document_schemas import DocumentWithMetadata
 from app.schemas.log_schemas import AIInteractionLogOut
-from app.services.handlers.base import DocumentContext
-from app.services.handlers.validate_file import ValidateFileHandler
-from app.services.handlers.extract_text import ExtractTextHandler
-from app.services.handlers.encrypt_file import EncryptFileHandler
-from app.services.handlers.save_to_db import SaveToDBHandler
 from sqlalchemy.orm import joinedload
-from app.db.crud.crud import (
-    get_document_by_id,
-    get_documents_list,
-    search_documents,
-)
+from app.db.crud.crud import get_document_by_id
 from app.services import storage_service
 from cryptography.fernet import InvalidToken
 
@@ -44,14 +32,6 @@ class DocumentNotFoundError(DocumentServiceError):
 
 class DocumentAccessDeniedError(DocumentServiceError):
     """Document access denied error"""
-    pass
-
-class DocumentProcessingError(DocumentServiceError):
-    """Document processing error"""
-    pass
-
-class DocumentEncryptionError(DocumentServiceError):
-    """Document encryption/decryption error"""
     pass
 
 
@@ -90,80 +70,6 @@ class DocumentService:
     # =========================================================
     # NOTA: _safe_activity_log ELIMINADO (ya no existe ActivityLog)
     # =========================================================
-
-    @staticmethod
-    async def upload_documents(files: List[UploadFile], db: Session, user) -> List[Document]:
-        """
-        Upload multiple documents with comprehensive error handling
-        """
-        if not files:
-            raise HTTPException(status_code=400, detail="No se proporcionaron archivos")
-
-        if len(files) > 10:
-            raise HTTPException(status_code=400, detail="Máximo 10 archivos por operación")
-
-        created_documents = []
-        failed_files = []
-
-        for f in files:
-            try:
-                if not f.filename:
-                    failed_files.append({"filename": "sin_nombre", "error": "Nombre de archivo vacío"})
-                    continue
-
-                if f.size and f.size > 50 * 1024 * 1024:
-                    failed_files.append({"filename": f.filename, "error": "Archivo demasiado grande (máximo 50MB)"})
-                    continue
-
-                content = await f.read()
-                if not content:
-                    failed_files.append({"filename": f.filename, "error": "Archivo vacío"})
-                    continue
-
-                await f.seek(0)
-
-                context = DocumentContext(filename=f.filename, content=content, user=user, db=db)
-
-                # Chain SIN LogActivityHandler (ya no aplica)
-                handler_chain = (
-                    ValidateFileHandler()
-                    .set_next(ExtractTextHandler())
-                    .set_next(EncryptFileHandler())
-                    .set_next(SaveToDBHandler())
-                )
-
-                with DocumentService.db_transaction(db):
-                    await handler_chain.handle(context)
-
-                    if context.document:
-                        db.refresh(context.document)
-                        created_documents.append(context.document)
-                        logging.info(f"Documento subido exitosamente: {f.filename} (ID: {context.document.id})")
-                    else:
-                        failed_files.append({"filename": f.filename, "error": "No se pudo guardar el documento"})
-
-            except HTTPException as e:
-                failed_files.append({"filename": f.filename, "error": e.detail})
-                logging.error(f"HTTPException procesando {f.filename}: {e.detail}")
-            except SQLAlchemyError as e:
-                failed_files.append({"filename": f.filename, "error": "Error de base de datos"})
-                logging.error(f"Database error procesando {f.filename}: {e}")
-            except Exception as e:
-                failed_files.append({"filename": f.filename, "error": "Error interno del servidor"})
-                logging.exception(f"Error inesperado procesando {f.filename}: {e}")
-
-        if not created_documents and failed_files:
-            error_details = "; ".join([f"{item['filename']}: {item['error']}" for item in failed_files])
-            raise HTTPException(
-                status_code=400,
-                detail=f"No se pudo procesar ningún archivo. Errores: {error_details}"
-            )
-
-        if failed_files:
-            error_summary = f"Archivos fallidos: {len(failed_files)}/{len(files)}"
-            logging.warning(f"Upload parcialmente exitoso - {error_summary}")
-
-        return created_documents
 
     @staticmethod
     def list_documents(

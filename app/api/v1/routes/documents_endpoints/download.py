@@ -25,9 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from requests import session
 from app.services.auth_service import get_current_user
-from app.db.crud import crud
 from app.db.database import SessionLocal, get_db
-from app.services import storage_service
 from app.services.document_service import DocumentService
 
 

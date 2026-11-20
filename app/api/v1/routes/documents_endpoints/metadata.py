@@ -16,17 +16,13 @@ Características:
 
 import logging
 from typing import List, Annotated
-from fastapi import Depends, HTTPException, Request, APIRouter
+from fastapi import Depends, HTTPException, APIRouter
 from fastapi.params import Query
-from fastapi.responses import StreamingResponse
 
 from sqlalchemy.orm import Session
 from app.schemas.document_schemas import DocumentOut, DocumentWithMetadata
 from app.services.auth_service import get_current_user
-from app.db.crud import crud
 from app.db.database import SessionLocal, get_db
-from app.models import models
-from app.services import storage_service
 from app.services.document_service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["documents"])

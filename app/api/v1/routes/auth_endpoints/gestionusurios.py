@@ -7,30 +7,22 @@ y estadísticas de inicio de sesión. Estos endpoints operan sobre el usuario ac
 sin requerir privilegios de administrador.
 """
 
-from app.services.security_service import verify_password
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from .....schemas.auth_schemas import (
-    ActiveSessionsResponse, BackupCodesResponse, RefreshTokenRequest, 
-    ResetPasswordRequest, Token, TwoFactorConfirmRequest, TwoFactorDisableRequest, 
-    TwoFactorSetupResponse, TwoFactorVerifyRequest
-)
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Body
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Body
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.models import User
-from app.enums.enums import UserRole
 
 from app.schemas.common_schemas import LoginStatsResponse
-from app.schemas.user_schemas import UserCreate, UserInfoResponse, UserManagementResponse, UserUpdate
+from app.schemas.user_schemas import UserInfoResponse
 from app.services.auth_service import (
-    AccountLockedError, AuthService, InvalidCredentialsError, PermissionDeniedError, 
-    TokenBlacklistedError, TokenExpiredError, TwoFactorAuthService, UserAlreadyExistsError, 
-    UserNotFoundError, WeakPasswordError, get_client_info, get_current_user, require_admin
+    AuthService,
+    InvalidCredentialsError,
+    WeakPasswordError,
+    get_current_user,
 )
 
 

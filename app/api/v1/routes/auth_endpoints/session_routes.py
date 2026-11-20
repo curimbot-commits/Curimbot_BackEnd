@@ -8,9 +8,8 @@ from app.db.database import get_db
 from app.models.models import ActiveSession, User
 from app.schemas.session_schemas import (
     ActiveSessionOut,
-    RevokeSessionRequest,
     RevokeAllSessionsRequest,
-    SessionStatsResponse
+    SessionStatsResponse,
 )
 from app.services.session_service import SessionService
 from app.services.auth_service import get_current_user

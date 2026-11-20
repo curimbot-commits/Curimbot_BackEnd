@@ -12,32 +12,10 @@ entornos de desarrollo (HTTP) y producción (HTTPS).
 
 from fastapi.responses import JSONResponse
 from app.services import security_service
-from app.services.security_service import verify_password
 import logging
-from datetime import datetime
-from typing import List
-from .....schemas.auth_schemas import (
-    ActiveSessionsResponse,
-    BackupCodesResponse,
-    RefreshTokenRequest,
-    ResetPasswordRequest,
-    Token,
-    TwoFactorConfirmRequest,
-    TwoFactorDisableRequest,
-    TwoFactorSetupResponse,
-    TwoFactorVerifyRequest,
-)
+from .....schemas.auth_schemas import Token
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Form,
-    HTTPException,
-    Request,
-    Response,
-    status,
-    Body,
-)
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from app.core.rate_limit import rate_limit
 from sqlalchemy.orm import Session
@@ -45,21 +23,18 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.enums.enums import NotificationType
 from app.models.models import User, LoginAlert
-from app.schemas.user_schemas import UserCreate, UserInfoResponse
+from app.schemas.user_schemas import UserCreate
 from app.services.auth_service import (
     AccountLockedError,
     AuthService,
     InvalidCredentialsError,
     TokenBlacklistedError,
     TokenExpiredError,
-    TwoFactorAuthService,
-    TwoFactorRequiredError,
     UserAlreadyExistsError,
     UserNotFoundError,
     WeakPasswordError,
     get_client_info,
     get_current_user,
-    require_admin,
 )
 
 from app.services.login_alert_service import LoginAlertService

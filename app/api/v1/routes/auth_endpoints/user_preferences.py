@@ -21,7 +21,6 @@ Categories:
 
 from fastapi.concurrency import run_in_threadpool
 import logging
-from typing import Optional
 
 from requests import Session
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Body

@@ -24,7 +24,7 @@ Typical usage:
 """
 
 import logging
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from app.models.models import Document
 
@@ -147,71 +147,3 @@ class DocumentProcessor:
         stripped = text.strip()
         alpha_count = sum(1 for c in stripped if c.isalpha())
         return alpha_count > 0
-
-    def bulk_process(
-        self,
-        documents: List[Document],
-        continue_on_error: bool = False
-    ) -> Dict[str, Any]:
-        results = {
-            "total": len(documents),
-            "successful": 0,
-            "failed": 0,
-            "total_chunks": 0,
-            "errors": []
-        }
-
-        for doc in documents:
-            try:
-                chunks = self.process_and_index(doc)
-                results["successful"] += 1
-                results["total_chunks"] += chunks
-            except Exception as e:
-                results["failed"] += 1
-                if continue_on_error:
-                    results["errors"].append({
-                        "doc_id": doc.id,
-                        "filename": doc.filename,
-                        "error": "Error al indexar el documento"
-                    })
-                    logger.warning(f"Bulk processing: skipped document {doc.id}: {e}")
-                else:
-                    logger.error(f"Bulk processing failed at document {doc.id}")
-                    raise
-
-        logger.info(
-            f"Bulk processing completed: "
-            f"{results['successful']}/{results['total']} successful, "
-            f"{results['total_chunks']} total chunks"
-        )
-        return results
-
-    def get_processing_stats(self, document: Document) -> Dict[str, Any]:
-        """Estadísticas de procesamiento (usa el chunk_size real del engine)."""
-        validation = self.validate_document(document)
-
-        chunk_size = getattr(self.rag_engine, "chunk_size", 1000)
-        chunk_overlap = getattr(self.rag_engine, "chunk_overlap", 200)
-
-        stats = {
-            "document_id": document.id,
-            "filename": document.filename,
-            "file_type": document.file_type.value,
-            "text_length": len(document.text) if document.text else 0,
-            "is_processable": validation.is_valid,
-            "estimated_chunks": 0,
-            "chunk_size": chunk_size,
-            "chunk_overlap": chunk_overlap,
-        }
-
-        if not validation.is_valid:
-            stats["validation_reason"] = validation.reason
-
-        if document.text and validation.is_valid:
-            text_length = len(document.text)
-            if text_length <= chunk_size:
-                stats["estimated_chunks"] = 1
-            else:
-                stats["estimated_chunks"] = 1 + (text_length - chunk_size) // (chunk_size - chunk_overlap)
-
-        return stats

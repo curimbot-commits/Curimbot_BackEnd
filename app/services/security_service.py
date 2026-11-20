@@ -1,8 +1,5 @@
 # app/services/security_service.py
-import os
 import hashlib
-import hmac
-import base64
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
@@ -26,7 +23,6 @@ inactivity_timeout = settings.SESSION_INACTIVITY_TIMEOUT_MINUTES
 # ========================================
 BCRYPT_ROUNDS = 12  # equivalente al default de passlib
 # passlib usa SHA-256 antes de bcrypt para soportar passwords largos
-BCRYPT_SHA256_SALT = b"bcrypt_sha256"  # constante que usa passlib internamente
 BCRYPT_SHA256_IDENT = "$bcrypt-sha256$"
 
 

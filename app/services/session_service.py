@@ -1,13 +1,12 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException, status
 from user_agents import parse  # pip install pycountry user-agents
 
 from app.models.models import ActiveSession, User, BlacklistedToken
-from app.services import security_service
 from jose import jwt
 
 logger = logging.getLogger(__name__)

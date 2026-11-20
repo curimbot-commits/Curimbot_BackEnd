@@ -1,7 +1,7 @@
 import io
 import fitz  # PyMuPDF
 import docx
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException
 
 def extract_text(file: io.BytesIO, filename: str) -> str:
     """

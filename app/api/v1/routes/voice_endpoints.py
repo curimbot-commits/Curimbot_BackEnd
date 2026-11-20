@@ -5,7 +5,6 @@ GET  /api/v1/voice/token    — Token efímero de Gemini Live (la API key no sal
 POST /api/v1/voice/context  — Fragmentos RAG relevantes para la query
 """
 
-from app.models.auth_models import User
 import logging
 import os
 
@@ -18,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.services.Curim.voice_rag_service import get_voice_rag_service
 from app.db.database import SessionLocal
 from app.services.auth_service import get_current_user
-from typing import List, Optional
+from typing import List
 from datetime import datetime, timedelta, timezone
 from google import genai
 from google.genai import types

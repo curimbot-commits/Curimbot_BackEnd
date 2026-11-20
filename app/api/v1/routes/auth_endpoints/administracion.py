@@ -10,31 +10,20 @@ import logging
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Body
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Body
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models.models import User, ActiveSession
-from app.enums.enums import UserRole
-from app.services.session_service import SessionService
+from app.models.models import User
 
 from app.schemas.common_schemas import LoginStatsResponse
-from app.schemas.user_schemas import UserCreate, UserInfoResponse, UserManagementResponse
+from app.schemas.user_schemas import UserInfoResponse, UserManagementResponse
 from app.services.auth_service import (
-    AccountLockedError,
     AuthService,
-    InvalidCredentialsError,
     PermissionDeniedError,
-    TokenBlacklistedError,
-    TokenExpiredError,
-    TwoFactorAuthService,
-    UserAlreadyExistsError,
     UserNotFoundError,
-    WeakPasswordError,
-    get_client_info,
-    get_current_user,
-    require_admin
+    require_admin,
 )
 
 

@@ -25,13 +25,11 @@ from typing import List, Optional, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.params import Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.schemas.dashboard_schemas import ChartDataPoint, DashboardStats
 from app.schemas.log_schemas import AIInteractionLogOut
 from app.services.auth_service import get_current_user
 from app.db.database import get_db
-from app.enums.enums import FileType
 from app.models import models
 from app.services.document_service import DocumentService
 

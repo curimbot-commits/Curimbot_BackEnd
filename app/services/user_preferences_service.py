@@ -1,7 +1,7 @@
 import os
 import logging
 import uuid
-from typing import Optional, List
+from typing import List
 
 from sqlalchemy.orm import Session
 from fastapi import UploadFile, HTTPException, status

@@ -24,7 +24,6 @@ Chain de Handlers:
     5. IndexCurimHandler: Indexa en Curim para búsqueda
 """
 
-import asyncio
 import uuid
 from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends
 from typing import List
@@ -33,17 +32,12 @@ from pydantic import ValidationError
 import logging
 
 from requests import session
-from app.db.crud import crud
 from app.db.database import SessionLocal
-from app.enums.enums import FileType
 from app.models.models import CurimDocumentIndex, Document
-from app.schemas.document_schemas import (
-    DocumentCreate, DocumentOut, DocumentUploadResponse, UserDocumentSettings
-)
+from app.schemas.document_schemas import DocumentOut, DocumentUploadResponse, UserDocumentSettings
 from app.services.Curim.Curim_service import get_curim_service
 from app.services.auth_service import get_current_user
-from app.services.document_service import DocumentService
-from app.services.handlers.base import DocumentContext, DocumentHandler, verify_chain_integrity
+from app.services.handlers.base import DocumentContext, verify_chain_integrity
 from app.services.handlers.encrypt_file import EncryptFileHandler
 from app.services.handlers.extract_text import ExtractTextHandler
 from app.services.handlers.save_to_db import SaveToDBHandler

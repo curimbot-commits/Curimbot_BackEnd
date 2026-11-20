@@ -1,6 +1,5 @@
 # app/services/handlers/validate_file.py
 from fastapi import HTTPException
-import os
 from app.enums.enums import FileType
 from .base import DocumentHandler, DocumentContext
 import logging

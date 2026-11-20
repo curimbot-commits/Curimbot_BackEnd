@@ -8,8 +8,10 @@ códigos de respaldo. Compatible con Google Authenticator, Microsoft Authenticat
 import logging
 from datetime import datetime, timezone
 from .....schemas.auth_schemas import (
-    BackupCodesResponse, TwoFactorConfirmRequest, TwoFactorDisableRequest,
-    TwoFactorSetupResponse, TwoFactorVerifyRequest
+    BackupCodesResponse,
+    TwoFactorConfirmRequest,
+    TwoFactorDisableRequest,
+    TwoFactorSetupResponse,
 )
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session

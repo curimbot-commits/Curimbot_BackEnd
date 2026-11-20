@@ -1,13 +1,8 @@
-from app.core.config import settings
 from typing import Optional
-from sqlalchemy import (
-    Boolean, Column, Integer, String, Text, DateTime,
-    ForeignKey, Index
-)
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
-from sqlalchemy.ext.hybrid import hybrid_property
 
 from .base import Base, TimestampMixin
 

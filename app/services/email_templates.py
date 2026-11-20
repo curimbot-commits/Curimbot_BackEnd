@@ -1,6 +1,6 @@
 
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 class EmailTemplates:
     """Centralización de plantillas HTML para emails."""

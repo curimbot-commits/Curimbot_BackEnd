@@ -1,13 +1,13 @@
 """
 Módulo de configuración centralizado de la aplicación.
 
-Gestiona JWT, base de datos, CORS, Curim (búsqueda semántica/RAG) y síntesis de voz.
+Gestiona JWT, base de datos y Curim (búsqueda semántica/RAG).
 Carga variables de entorno desde .env mediante pydantic-settings.
 """
 
 from pydantic import field_validator
 import os
-from typing import List, Optional
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     SESSION_INACTIVITY_TIMEOUT_MINUTES: int = 60
-    MAX_SESSION_LIFETIME_DAYS: int = 30
 
     # ── Base de datos ────────────────────────────────────────────────────────
     DB_USER: str = "root"
@@ -68,9 +67,6 @@ class Settings(BaseSettings):
             return self.DATABASE_URL
         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
 
-    # ── CORS ────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: List[str] = ["http://localhost:4200"]
-
     # ── Curim / Gemini ──────────────────────────────────────────────────────
     GEMINI_API_KEY: Optional[str] = None
     # Modelos (cambiables por entorno sin desplegar código). Las keys nuevas
@@ -87,8 +83,6 @@ class Settings(BaseSettings):
     GEMINI_TEXT_THINKING_BUDGET: int = 0
     GEMINI_LIVE_MODEL: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     Curim_STORAGE_PATH: str = "./storage/Curim_data"
-    Curim_CACHE_ENABLED: bool = True
-    Curim_CACHE_TTL_DAYS: int = 7
 
     # ── RAG ──────────────────────────────────────────────────────────────────
     # chunk_size y chunk_overlap deben estar en caracteres.
@@ -102,10 +96,6 @@ class Settings(BaseSettings):
     # Umbral de distancia coseno para descartar chunks irrelevantes.
     # Menor = más relevante. Calibrar en Fase 2 con datos reales.
     RAG_MAX_DISTANCE: float = 0.7
-
-    # ── Text-to-Speech ──────────────────────────────────────────────────────
-    DEFAULT_VOICE: str = "es-PA-MargaritaNeural"
-    VOICE_SPEED: str = "+20%"
 
     # ── Validación ──────────────────────────────────────────────────────────
     def validate_production(self) -> None:

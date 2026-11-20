@@ -25,10 +25,6 @@ class CurimQueryRequest(BaseModel):
             }
         }
 
-class CurimVoiceRequest(BaseModel):
-    """Request para consulta por voz"""
-    audio_base64: str = Field(..., description="Audio en base64")
-    use_cache: bool = Field(default=True, description="Usar caché de respuestas")
 
 class DocumentSyncRequest(BaseModel):
     """Request para sincronizar documentos con Curim"""
@@ -106,17 +102,7 @@ class DocumentSyncResponse(BaseModel):
     processing_time_ms: float
 
 
-class TTSRequest(BaseModel):
-    text: str
-    voice: str = "es-PA-MargaritaNeural"
-    rate: str = "+0%"
-    pitch: str = "+0Hz"
-
 class VoiceInfo(BaseModel):
     name: str
     gender: str
     locale: str
-
-class VoicesResponse(BaseModel):
-    voices: List[VoiceInfo]
-

@@ -15,33 +15,18 @@ Características:
     - Ordenamiento flexible
 """
 
-import datetime
-import io
 import logging
-from typing import List, Optional, Annotated
-from datetime import date, timedelta
+from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
 
-from app.db.crud import crud
 from app.db.database import SessionLocal
 from app.enums.enums import FileType
-from app.models import models
 from app.schemas.document_schemas import PaginatedDocumentsResponse
-from app.services import storage_service
 from app.services.document_service import DocumentService
-from app.services.handlers.base import DocumentContext
-from app.services.utils import extract_text
 from app.services.auth_service import get_current_user
 
-from app.services.handlers.validate_file import ValidateFileHandler
-from app.services.handlers.extract_text import ExtractTextHandler  
-from app.services.handlers.encrypt_file import EncryptFileHandler
-from app.services.handlers.save_to_db import SaveToDBHandler
-from cryptography.fernet import InvalidToken
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 

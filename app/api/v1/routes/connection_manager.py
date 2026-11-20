@@ -6,7 +6,6 @@ Para broadcast cross-worker se usa Redis Pub/Sub.
 """
 
 import asyncio
-import json
 import logging
 from typing import Dict, Optional
 import uuid
@@ -40,18 +39,6 @@ class ConnectionManager:
         async with self._lock:
             self._connections.pop(connection_id, None)
         logger.info(f"[CM] Eliminado {connection_id}. Total: {len(self._connections)}")
-
-    async def send_to(self, connection_id: str, payload: dict) -> bool:
-        async with self._lock:
-            ws = self._connections.get(connection_id)
-        if ws is None:
-            return False
-        try:
-            await ws.send_json(payload)
-            return True
-        except Exception as e:
-            logger.warning(f"[CM] Error enviando a {connection_id}: {e}")
-            return False
 
     async def broadcast(self, payload: dict) -> int:
         """Broadcast a todas las conexiones del proceso actual."""

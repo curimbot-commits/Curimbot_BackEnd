@@ -1,8 +1,7 @@
 from datetime import datetime
 import re
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, model_validator
-
 
 
 # ========================================
@@ -98,15 +97,6 @@ class UserManagementResponse(BaseModel):
 # ========================================
 # ESQUEMAS DE ADMINISTRACIÓN
 # ========================================
-class RoleUpdateRequest(BaseModel):
-    """Request para actualizar rol de usuario"""
-    new_role: str = Field(
-        ..., 
-        description="New role for the user",
-        pattern="^(admin|user)$"  # Validar que solo sean estos valores
-    )
-    
-    model_config = ConfigDict(from_attributes=True)
 
 class UserListFilters(BaseModel):
     """Filtros para listado de usuarios"""
@@ -126,46 +116,11 @@ class UserListFilters(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
-class UserListResponse(BaseModel):
-    """Respuesta paginada de usuarios"""
-    users: List[UserInfoResponse]
-    total: int = Field(..., description="Total number of users")
-    skip: int = Field(..., description="Number of users skipped")
-    limit: int = Field(..., description="Maximum number of users returned")
-    has_next: bool = Field(..., description="Whether there are more users")
-    has_prev: bool = Field(..., description="Whether there are previous users")
-    filters_applied: Optional[UserListFilters] = None
-
-
-class SecuritySettings(BaseModel):
-    """Configuración de seguridad del usuario"""
-    two_factor_enabled: bool = False
-    login_notifications: bool = True
-    suspicious_activity_alerts: bool = True
-    session_timeout_minutes: int = 30
-    require_password_change_days: Optional[int] = None
-
-class SecuritySettingsUpdate(BaseModel):
-    """Actualización de configuración de seguridad"""
-    login_notifications: Optional[bool] = None
-    suspicious_activity_alerts: Optional[bool] = None
-    session_timeout_minutes: Optional[int] = Field(None, ge=5, le=1440)  # 5 min to 24 hours
-    require_password_change_days: Optional[int] = Field(None, ge=1, le=365)
-
 
 # ========================================
 # ESQUEMAS PARA NOTIFICACIONES
 # ========================================
 
-class NotificationPreferences(BaseModel):
-    """Preferencias de notificaciones del usuario"""
-    login_alerts: bool = True
-    suspicious_activity: bool = True
-    password_expiry_warning: bool = True
-    security_updates: bool = True
-    marketing_communications: bool = False
-    email_notifications: bool = True
-    push_notifications: bool = False
 
 class SecurityAlert(BaseModel):
     """Alerta de seguridad"""
@@ -178,4 +133,3 @@ class SecurityAlert(BaseModel):
     created_at: datetime
     acknowledged: bool = False
     acknowledged_at: Optional[datetime] = None
-

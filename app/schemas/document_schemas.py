@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, ConfigDict, Field
 from app.enums.enums import FileType
 
 # =========================================================
@@ -38,22 +38,7 @@ class DocumentOut(BaseModel):
     model_config = ConfigDict(
         from_attributes=True  
     )
-    
 
-class DocumentSearchResults(BaseModel):
-    results: List[DocumentOut]
-
-# Actualizar DocumentOut para incluir nuevos campos
-class DocumentOutEnhanced(DocumentOut):
-    """Versión mejorada de DocumentOut con campos adicionales"""
-    download_count: Optional[int] = Field(0, description="Número de descargas")
-    view_count: Optional[int] = Field(0, description="Número de visualizaciones")
-    last_accessed: Optional[datetime] = Field(None, description="Última vez que se accedió")
-    is_encrypted: bool = Field(True, description="Si el documento está encriptado")
-    content_preview: Optional[str] = Field(None, description="Preview del contenido (primeros 200 chars)")
-    
-    class Config:
-        from_attributes = True
 
         # Documento con metadatos completos
 class DocumentWithMetadata(BaseModel):
@@ -79,18 +64,6 @@ class DocumentSearchOut(BaseModel):
     uploaded_by_name: Optional[str] = Field(None, description="Nombre del usuario que subió el documento")
 
     model_config = ConfigDict(from_attributes=True)
-
-# Esquema para filtros avanzados de búsqueda
-class DocumentSearchFilters(BaseModel):
-    """Filtros avanzados para búsqueda de documentos"""
-    text: Optional[str] = Field(None, min_length=2, max_length=500)
-    file_type: Optional[FileType] = None
-    size_min: Optional[int] = Field(None, ge=0, description="Tamaño mínimo en bytes")
-    size_max: Optional[int] = Field(None, ge=0, description="Tamaño máximo en bytes")
-    date_from: Optional[datetime] = Field(None, description="Fecha de creación desde")
-    date_to: Optional[datetime] = Field(None, description="Fecha de creación hasta")
-    sort_by: Optional[Literal["created_at", "filename", "size", "file_type"]] = "created_at"
-    sort_order: Optional[Literal["asc", "desc"]] = "desc"
 
 class PaginatedDocumentsResponse(BaseModel):
     items: List[DocumentSearchOut]
@@ -128,15 +101,6 @@ class UserDocumentSettings(BaseModel):
     class Config:
         from_attributes = True
 
-class SearchResult(BaseModel):
-    id: int
-    title: str
-    category: str
-    created_at: datetime
-    file_type: str
-    match_snippet: Optional[str] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 # =========================================================
 # Esquemas adicionales para documentos opcionales / checklist
