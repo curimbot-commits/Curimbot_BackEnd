@@ -44,6 +44,22 @@ def _sources_from(retrieved) -> List[dict]:
     return sources
 
 
+def _whole_blocks(retrieved, max_chars: int) -> list:
+    """Los mejores bloques que caben completos (al menos uno, aunque no quepa)."""
+    kept, size = [], 0
+    for doc, score in retrieved:
+        length = len(_block(doc)) + (2 if kept else 0)
+        if kept and size + length > max_chars:
+            break
+        kept.append((doc, score))
+        size += length
+    return kept
+
+
+def _block(doc) -> str:
+    return doc.metadata.get("block_text", doc.page_content).strip()
+
+
 class VoiceRAGService:
     """
     Conecta el endpoint de voz con el VoiceRAGEngine.
@@ -55,7 +71,7 @@ class VoiceRAGService:
         query: str,
         user_id: int,
         db: Session,
-        max_chars: int = 3000,
+        max_chars: int = 6000,
     ) -> Tuple[Optional[str], List[dict]]:
         """
         Busca fragmentos semánticamente relevantes en los documentos del usuario.
@@ -100,8 +116,10 @@ class VoiceRAGService:
                 )
                 return None, []
 
+            # Se quitan bloques enteros: uno cortado puede perder justo la cifra
             if len(context_str) > max_chars:
-                context_str = context_str[:max_chars] + "..."
+                _retrieved = _whole_blocks(_retrieved, max_chars)
+                context_str = "\n\n".join(_block(doc) for doc, _ in _retrieved)[:max_chars]
 
             logger.info(
                 f"[VoiceRAG] Contexto recuperado: {len(context_str)} chars "

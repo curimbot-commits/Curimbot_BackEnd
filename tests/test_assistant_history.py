@@ -47,6 +47,7 @@ def test_text_with_sources_is_logged_as_success(client, make_user, db, monkeypat
 def test_follow_up_questions_stay_in_same_conversation(client, make_user, db, monkeypatch):
     monkeypatch.setattr(service.rag_engine, "query",
                         lambda question, documents: ("R", 0.9, [1], []))
+    monkeypatch.setattr(service.rag_engine, "rewrite_question", lambda question, history: question)
     user = make_user()
     _login(client, user)
     first = _ask(client, "primera pregunta")

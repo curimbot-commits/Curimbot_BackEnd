@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.models.models import (
 from app.services.Curim.cache_manager import CacheManager
 from app.services.Curim.document_processor import DocumentProcessor
 from app.services.Curim.semantic_cache import SemanticCache
+from app.services.Curim.small_talk import REPLY_TEXTS, small_talk_reply
 from app.services.Curim.voice_rag_service import get_rag_engine
 from app.services.handlers.log_activity import LogAIInteractionHandler
 
@@ -72,6 +73,19 @@ class CurimService:
         conversation_id: Optional[int] = None,
     ) -> dict:
         start_time = time.time()
+
+        reply = small_talk_reply(question)
+        if reply:
+            return self._answer_small_talk(db, user, question, reply, conversation_id, start_time)
+
+        # Una repregunta depende de su conversación: se completa con ella y no
+        # usa ni llena la caché, que solo conoce el texto de la pregunta.
+        history = self._recent_history(db, user.id, conversation_id)
+        if history:
+            use_cache = False
+            search_question = self.rag_engine.rewrite_question(question, history)
+        else:
+            search_question = question
 
         if use_cache:
             cached_response = self.cache_manager.get(user.id, question)
@@ -122,7 +136,7 @@ class CurimService:
 
         try:
             answer, confidence, source_ids, sources_info = self.rag_engine.query(
-                question=question,
+                question=search_question,
                 documents=user_documents,
             )
         except Exception as e:
@@ -182,6 +196,60 @@ class CurimService:
             "conversation_id": conv_id,
         }
 
+    # Mensajes previos que se usan como memoria y máximo de texto de cada uno
+    HISTORY_MESSAGES = 6
+    HISTORY_MESSAGE_CHARS = 800
+
+    def _recent_history(
+        self, db: Session, user_id: int, conversation_id: Optional[int]
+    ) -> List[Tuple[str, str]]:
+        """Últimos mensajes de la conversación (solo si es del usuario), sin cortesías."""
+        if not conversation_id:
+            return []
+        messages = (
+            db.query(CurimMessage)
+            .join(CurimConversation)
+            .filter(
+                CurimConversation.id == conversation_id,
+                CurimConversation.user_id == user_id,
+            )
+            .order_by(CurimMessage.id.desc())
+            .limit(self.HISTORY_MESSAGES)
+            .all()
+        )
+        return [
+            (m.role, m.content[: self.HISTORY_MESSAGE_CHARS])
+            for m in reversed(messages)
+            if m.content not in REPLY_TEXTS
+            and not (m.role == "user" and small_talk_reply(m.content))
+        ]
+
+    def _answer_small_talk(
+        self,
+        db: Session,
+        user: User,
+        question: str,
+        reply: str,
+        conversation_id: Optional[int],
+        start_time: float,
+    ) -> dict:
+        elapsed = round((time.time() - start_time) * 1000, 2)
+        conv_id = self._save_to_history(
+            db, user.id, question, reply,
+            confidence=1.0, sources=[], sources_info=[], from_cache=False,
+            processing_time_ms=elapsed, conversation_id=conversation_id,
+            status=AIInteractionStatus.success,
+        )
+        return {
+            "answer": reply,
+            "confidence": 1.0,
+            "sources": [],
+            "sources_info": [],
+            "from_cache": False,
+            "processing_time_ms": elapsed,
+            "conversation_id": conv_id,
+        }
+
     def _get_user_documents(
         self,
         db: Session,
@@ -202,6 +270,7 @@ class CurimService:
         from_cache: bool,
         processing_time_ms: float,
         conversation_id: Optional[int] = None,
+        status: Optional[AIInteractionStatus] = None,
     ) -> int:
         if conversation_id:
             conversation = (
@@ -257,7 +326,9 @@ class CurimService:
             channel=AIChannel.text,
             confidence=confidence,
             # Sin fuentes = no se encontró contexto en los documentos
-            status=AIInteractionStatus.success if sources else AIInteractionStatus.no_context,
+            status=status or (
+                AIInteractionStatus.success if sources else AIInteractionStatus.no_context
+            ),
             sources=sources,
             sources_info=sources_info,
             processing_time_ms=int(processing_time_ms),
