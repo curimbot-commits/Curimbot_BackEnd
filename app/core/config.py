@@ -85,10 +85,9 @@ class Settings(BaseSettings):
     Curim_STORAGE_PATH: str = "./storage/Curim_data"
 
     # ── RAG ──────────────────────────────────────────────────────────────────
-    # chunk_size y chunk_overlap deben estar en caracteres.
-    # MiniLM-L12 multilingüe tiene ventana de 512 tokens (~380 palabras,
-    # ~1800-2200 caracteres en español). 1000/200 es un buen punto medio
-    # para documentos financieros y de seguros.
+    # Tamaño, en caracteres, de los bloques que recibe Gemini como contexto.
+    # La búsqueda usa fragmentos más pequeños: MiniLM-L12 multilingüe solo lee
+    # 128 tokens (ver VoiceRAGEngine._fragment_splitter).
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     TOP_K_RESULTS: int = 6

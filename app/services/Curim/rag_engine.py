@@ -8,7 +8,7 @@ Este módulo NO debe instanciarse directamente por consumidores finales.
 Usar get_rag_engine() de voice_rag_service para obtener el singleton.
 
 Fase 1: 
-    - index_document borra chunks previos del mismo document_id.
+    - index_document reemplaza los fragmentos previos del mismo document_id.
     - Retrieval usa RAG_MAX_DISTANCE y TOP_K_RESULTS de config.
     - sources_info incluye filename y snippet reales (sin score inventado).
     - Prompt sin estructura impuesta, temperature baja.
@@ -394,7 +394,8 @@ RESPUESTA:"""
 
             retrieved = self.vectorstore.similarity_search_with_score(
                 query=question,
-                k=max(self.top_k * 3, 15),  # candidatos de sobra para filtrar
+                # candidatos de sobra: varios fragmentos pueden ser del mismo bloque
+                k=max(self.top_k * 8, 30),
                 filter={"document_id": {"$in": doc_ids}}
             )
 
@@ -406,12 +407,16 @@ RESPUESTA:"""
             if not selected:
                 return "No se encontraron fragmentos con suficiente relevancia para responder.", []
 
-            selected = selected[:self.top_k]
+            # Se busca por fragmento, pero a Gemini va el bloque completo, una sola vez
+            selected = self._best_fragment_per_block(selected)[:self.top_k]
 
-            context = "\n\n".join(doc.page_content.strip() for doc, _ in selected)
+            context = "\n\n".join(
+                doc.metadata.get("block_text", doc.page_content).strip()
+                for doc, _ in selected
+            )
             logger.info(
                 f"Contexto recuperado: {len(context)} caracteres "
-                f"de {len(selected)} chunks "
+                f"de {len(selected)} bloques "
                 f"(mejor distancia: {selected[0][1]:.3f})"
             )
             return context, selected
@@ -419,6 +424,27 @@ RESPUESTA:"""
         except Exception as e:
             logger.error(f"Error en retrieval: {e}")
             return "", []
+
+    @staticmethod
+    def _best_fragment_per_block(
+        retrieved: List[Tuple[LangchainDocument, float]]
+    ) -> List[Tuple[LangchainDocument, float]]:
+        """
+        Conserva el fragmento más cercano de cada bloque (llegan ordenados por
+        distancia). Los índices anteriores no tienen bloques: cada chunk cuenta
+        como uno propio.
+        """
+        seen, best = set(), []
+        for doc, score in retrieved:
+            meta = doc.metadata
+            block = meta.get("block_index")
+            if block is None:
+                block = ("chunk", meta.get("chunk_index"))
+            key = (meta.get("document_id"), block)
+            if key not in seen:
+                seen.add(key)
+                best.append((doc, score))
+        return best
 
     # ============================================================
     # CONFIANZA Y UTILIDADES
@@ -469,12 +495,38 @@ RESPUESTA:"""
             # Chroma lanza si no hay nada que borrar en algunas versiones
             logger.debug(f"Sin fragmentos para documento {document_id}: {e}")
 
+    # Margen sobre el límite del modelo: al unir trozos, la cuenta de tokens
+    # puede variar ligeramente respecto a la suma de las partes.
+    FRAGMENT_TOKEN_MARGIN = 12
+    FRAGMENT_TOKEN_OVERLAP = 20
+    SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+
+    def _fragment_splitter(self) -> RecursiveCharacterTextSplitter:
+        """
+        Divide en fragmentos que el modelo de embeddings lee completos.
+
+        MiniLM multilingüe solo lee 128 tokens: todo lo que pase de ahí no entra
+        en el vector y no se puede encontrar. Se mide en tokens y no en
+        caracteres porque tablas y códigos gastan muchos más por carácter.
+        """
+        model = self.embeddings._client
+        return RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
+            model.tokenizer,
+            chunk_size=model.max_seq_length - self.FRAGMENT_TOKEN_MARGIN,
+            chunk_overlap=self.FRAGMENT_TOKEN_OVERLAP,
+            separators=self.SEPARATORS,
+        )
+
     def index_document(self, document) -> int:
         """
-        Indexa documento en el vector store.
+        Indexa documento en el vector store y devuelve cuántos fragmentos creó.
 
-        Borra los chunks previos del mismo document_id antes de insertar
-        los nuevos, para que reindexar no duplique contenido.
+        El texto se divide en bloques (CHUNK_SIZE caracteres: lo que recibe
+        Gemini) y cada bloque en fragmentos que el modelo de embeddings lee
+        completos (lo que se busca).
+
+        Los fragmentos previos del documento se borran después de insertar los
+        nuevos: si la indexación falla, el índice anterior se conserva.
         """
         if not self.is_ready:
             raise VoiceRAGEngineError(f"Motor no está listo (estado: {self._status})")
@@ -483,45 +535,38 @@ RESPUESTA:"""
             if not document or not hasattr(document, 'text') or not document.text:
                 raise ValueError("Documento inválido")
 
-            self._set_status('processing')
-
-            text_splitter = RecursiveCharacterTextSplitter(
+            block_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=self.chunk_size,
                 chunk_overlap=self.chunk_overlap,
-                separators=["\n\n", "\n", ". ", " ", ""]
+                separators=self.SEPARATORS,
             )
-            chunks = text_splitter.split_text(document.text)
-
-            if not chunks:
-                logger.warning(f"Documento {document.filename} no generó chunks")
-                self._set_status('ready')
-                return 0
+            fragment_splitter = self._fragment_splitter()
 
             docs = []
-            for i, chunk in enumerate(chunks):
-                metadata = {
-                    "chunk_index": i,
-                    "filename": document.filename,
-                    "document_id": document.id,
-                    "word_count": len(chunk.split()),
-                }
-                docs.append(
-                    LangchainDocument(page_content=chunk, metadata=metadata)
-                )
+            for block_index, block in enumerate(block_splitter.split_text(document.text)):
+                for fragment in fragment_splitter.split_text(block):
+                    docs.append(LangchainDocument(
+                        page_content=fragment,
+                        metadata={
+                            "chunk_index": len(docs),
+                            "block_index": block_index,
+                            "block_text": block,
+                            "filename": document.filename,
+                            "document_id": document.id,
+                            "word_count": len(fragment.split()),
+                        },
+                    ))
 
-            # Borrar chunks previos del mismo documento (si existen)
-            try:
-                self.vectorstore.delete(where={"document_id": document.id})
-                logger.debug(
-                    f"Chunks previos de documento {document.id} eliminados (si existían)"
-                )
-            except Exception as e:
-                # Chroma lanza si no hay nada que borrar en algunas versiones
-                logger.debug(
-                    f"Sin chunks previos para documento {document.id}: {e}"
-                )
+            if not docs:
+                logger.warning(f"Documento {document.filename} no generó fragmentos")
+                return 0
 
+            previous_ids = self.vectorstore.get(
+                where={"document_id": document.id}, include=[]
+            )["ids"]
             self.vectorstore.add_documents(docs)
+            if previous_ids:
+                self.vectorstore.delete(ids=previous_ids)
 
             if hasattr(self.vectorstore, 'persist'):
                 try:
@@ -529,17 +574,17 @@ RESPUESTA:"""
                 except Exception as e:
                     logger.debug(f"persist() no aplicable: {e}")
 
-            self._set_status('ready')
             logger.info(
-                f"Indexado {len(chunks)} chunks de {document.filename} "
+                f"Indexados {len(docs)} fragmentos de {document.filename} "
                 f"(document_id={document.id})"
             )
 
-            return len(chunks)
+            return len(docs)
 
         except Exception as e:
+            # El estado no cambia: un documento que falla (o que se está
+            # indexando) no debe dejar sin asistente al resto de usuarios.
             logger.error(f"Error indexando documento: {e}")
-            self._set_status('error')
             raise VoiceRAGEngineError(f"Fallo al indexar documento: {e}") from e
 
     def cleanup(self) -> None:
