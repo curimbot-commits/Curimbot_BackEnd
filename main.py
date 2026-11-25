@@ -139,6 +139,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error inicializando VoiceRAGEngine: {e}", exc_info=True)
 
+    # Documentos sin fragmentos en el índice: se indexan sin retrasar el arranque
+    from app.services.Curim.reindex import run_startup_repair
+    app.state.index_repair = asyncio.create_task(asyncio.to_thread(run_startup_repair))
+
     # 5. Scheduler de Resumen Semanal
     try:
         from app.core.scheduler import start_weekly_summary_scheduler

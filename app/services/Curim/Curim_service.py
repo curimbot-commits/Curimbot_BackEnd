@@ -29,6 +29,11 @@ from app.services.Curim.voice_rag_service import get_rag_engine
 from app.services.handlers.log_activity import LogAIInteractionHandler
 
 
+def accessible_filter(user_id: int):
+    """Condición SQL: documentos propios y públicos (los que sube un admin)."""
+    return (Document.uploaded_by == user_id) | (Document.is_public == 1)
+
+
 def accessible_documents(
     db: Session,
     user_id: int,
@@ -39,9 +44,7 @@ def accessible_documents(
     usuario: los suyos y los públicos (los que sube un admin). Misma regla
     que la descarga de documentos.
     """
-    query = db.query(Document).filter(
-        (Document.uploaded_by == user_id) | (Document.is_public == 1)
-    )
+    query = db.query(Document).filter(accessible_filter(user_id))
     if document_ids:
         query = query.filter(Document.id.in_(document_ids))
     return query.all()
@@ -492,7 +495,7 @@ class CurimService:
             db.query(CurimDocumentIndex)
             .join(Document)
             .filter(
-                Document.uploaded_by == user_id,
+                accessible_filter(user_id),
                 CurimDocumentIndex.is_indexed == True,
             )
             .count()
@@ -501,7 +504,7 @@ class CurimService:
         last_sync = (
             db.query(CurimDocumentIndex)
             .join(Document)
-            .filter(Document.uploaded_by == user_id)
+            .filter(accessible_filter(user_id))
             .order_by(CurimDocumentIndex.last_indexed_at.desc())
             .first()
         )

@@ -88,7 +88,9 @@ class DocumentService:
             query = query.filter(models.Document.file_type == file_type.value)
 
         total = query.count()
-        documents = query.order_by(models.Document.created_at.desc()).offset(skip).limit(limit).all()
+        documents = query.order_by(
+            models.Document.created_at.desc(), models.Document.id.desc()
+        ).offset(skip).limit(limit).all()
 
         return documents, total
 
@@ -415,7 +417,7 @@ class DocumentService:
             total = query.count()
 
             documents = (
-                query.order_by(Document.created_at.desc())
+                query.order_by(Document.created_at.desc(), Document.id.desc())
                 .offset(skip)
                 .limit(limit)
                 .all()
